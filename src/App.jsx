@@ -2268,6 +2268,17 @@ ${slotList || "(없음)"}
               </div>
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+                <div className="text-xs font-semibold mb-1">데이터 정리</div>
+                <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>테스트로 넣었던 항목들을 한 번에 지울 수 있어요. 지운 데이터는 되돌릴 수 없어요.</div>
+                <div className="flex gap-1.5">
+                  <button onClick={() => { if (!window.confirm("할 일을 전부 삭제할까요? 되돌릴 수 없어요.")) return; setData((prev) => ({ ...prev, tasks: [], completed: {}, postponed: {}, splits: {}, plan: null })); }}
+                    className="text-[11px] px-3 py-1.5 rounded-full flex-1" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.coral}}>할 일 전체 삭제</button>
+                  <button onClick={() => { if (!window.confirm("시간표를 전부 삭제할까요? 되돌릴 수 없어요.")) return; setData((prev) => ({ ...prev, classes: [], prepByClass: {} })); }}
+                    className="text-[11px] px-3 py-1.5 rounded-full flex-1" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.coral}}>시간표 전체 삭제</button>
+                </div>
+              </div>
+
+              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold">완료 통계</span>
                   <div className="flex gap-1">
