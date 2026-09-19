@@ -51,8 +51,9 @@ function cleanName(t) {
 
 /* ---------- 1) 목록형 글자 패턴 ---------- */
 const T = "(\\d{1,2})\\s*[:.]\\s*(\\d{2})";
+// 요일 여러 개는 "화,목" "화 목" "화목"(구분자 없음) 등 표기가 제각각이라 구분자를 선택 사항으로 둡니다.
 const SEG_RE = new RegExp(
-  `([월화수목금토일](?:\\s*[,·/]\\s*[월화수목금토일])*)\\s*(?:요일)?\\s*${T}\\s*[-~–—]\\s*${T}` +
+  `([월화수목금토일](?:[,·/\\s]*[월화수목금토일])*)\\s*(?:요일)?\\s*${T}\\s*[-~–—]\\s*${T}` +
   `(?:\\s*[【\\[(<{]\\s*([^】\\])>}]{1,24}?)\\s*[】\\])>}])?(?:\\s*(\\d{5}))?`,
   "g"
 );
@@ -78,7 +79,8 @@ export function parseTimetableText(text) {
       // 괄호 없이 "제1공학관 21102"처럼 뒤에 붙은 강의실도 찾습니다 (다음 요일·시간 전까지).
       const after = line.slice(m.index + m[0].length, mi + 1 < matches.length ? matches[mi + 1].index : undefined);
       const room = (m[6] || m[7] || findRoom(after.split("/")[0]) || "").replace(/\s+/g, "").trim();
-      m[1].split(/[,·/\s]+/).filter((d) => DAYS.includes(d)).forEach((day) => {
+      // 요일 사이 구분자가 없거나(화목) 제각각이라, 글자 하나하나를 요일로 봅니다.
+      [...m[1]].filter((d) => DAYS.includes(d)).forEach((day) => {
         rows.push({ name, day, start: toHHMM(start), end: toHHMM(end), room });
       });
     });
@@ -231,6 +233,28 @@ function parseTimeLabels(words, gridLeft, headerBottom) {
   }).filter((a) => a.min <= 23 * 60 + 59);
 }
 
+// 눈금은 보통 같은 간격(1시간)으로 놓여 있으니, 위치로 순서를 매기고 '첫 눈금 시각'을 다수결로 정합니다.
+// OCR이 숫자 하나를 잘못 읽어도(1→7, 2→ㅇ) 전체 시간이 틀어지지 않게 합니다.
+function normalizeHourLabels(labels) {
+  if (labels.length < 3) return labels;
+  const sorted = [...labels].sort((a, b) => a.bbox.y0 - b.bbox.y0);
+  const ys = sorted.map((l) => (l.bbox.y0 + l.bbox.y1) / 2);
+  const steps = ys.slice(1).map((y, i) => y - ys[i]).filter((d) => d > 4);
+  const step = median(steps);
+  if (!(step > 4)) return labels;
+  const mins = sorted.map((l) => l.min);
+  const minStep = median(mins.slice(1).map((m, i) => m - mins[i]).filter((d) => d > 0)) || 60;
+  const votes = new Map();
+  sorted.forEach((l, i) => {
+    const k = Math.round((ys[i] - ys[0]) / step);
+    const base = l.min - k * minStep;
+    votes.set(base, (votes.get(base) || 0) + 1);
+  });
+  const [base, count] = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (count < Math.ceil(sorted.length / 3)) return labels; // 합의가 약하면 원래 값 사용
+  return sorted.map((l, i) => ({ ...l, min: base + Math.round((ys[i] - ys[0]) / step) * minStep }));
+}
+
 function fitLine(points) {
   // minutes = a * y + b (최소제곱)
   const n = points.length;
@@ -246,7 +270,10 @@ function fitLine(points) {
 
 /* ---------- 픽셀 분석 ---------- */
 function px(img, x, y) {
-  const i = (y * img.width + x) * 4;
+  // 좌표가 소수(예: 열 경계 138.4px)면 픽셀을 못 읽고 undefined가 되어 칸 인식 전체가 실패하므로 정수로 내립니다.
+  const xi = Math.min(img.width - 1, Math.max(0, Math.floor(x)));
+  const yi = Math.min(img.height - 1, Math.max(0, Math.floor(y)));
+  const i = (yi * img.width + xi) * 4;
   return [img.data[i], img.data[i + 1], img.data[i + 2]];
 }
 const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
@@ -271,18 +298,45 @@ function backgroundColor(img, x0, y0, x1, y1) {
 function horizontalLines(img, x0, x1, y0, y1, bg, minFrac = 0.8) {
   const xa = Math.max(0, Math.round(x0)), xb = Math.min(img.width, Math.round(x1));
   const ya = Math.max(0, Math.round(y0)), yb = Math.min(img.height, Math.round(y1));
-  const lines = [];
-  let start = -1, prev = -1;
+  const frac = [];
   for (let y = ya; y < yb; y += 1) {
     let non = 0, tot = 0;
     for (let x = xa; x < xb; x += 2) { tot += 1; if (dist(px(img, x, y), bg) > 22) non += 1; }
-    const isLine = tot > 0 && non / tot >= minFrac;
-    if (isLine) { if (start < 0) start = y; prev = y; }
-    // 칸 테두리와 시간선이 겹치면 두꺼워지므로 12px까지 선으로 봅니다 (색칸은 이보다 훨씬 두꺼움).
-    else if (start >= 0) { if (prev - start <= 12) lines.push(start); start = -1; }
+    frac.push(tot ? non / tot : 0);
   }
-  if (start >= 0 && prev - start <= 12) lines.push(start);
+  const at = (y) => (y < ya || y >= yb ? 0 : frac[y - ya]);
+  const lines = [];
+  let start = -1, prev = -1;
+  const flush = () => {
+    if (start < 0 || prev - start > 12) return;
+    // 진짜 선은 위아래 몇 px만 벗어나도 확 비어야 합니다. 색칸이 여러 열에 걸친 구간은 위아래도 차 있어서 제외.
+    const core = Math.max(...Array.from({ length: prev - start + 1 }, (_, k) => at(start + k)));
+    const above = at(start - 5), below = at(prev + 5);
+    if (Math.max(above, below) <= core - 0.3) lines.push(start);
+  };
+  for (let y = ya; y < yb; y += 1) {
+    if (at(y) >= minFrac) { if (start < 0) start = y; prev = y; }
+    else if (start >= 0) { flush(); start = -1; }
+  }
+  flush();
   return lines;
+}
+
+// 흐린 사진에선 흰 글씨 번짐 때문에 같은 칸도 줄마다 밝기가 달라져서, 밝기보다 '색상(hue)'으로 같은 칸인지 봅니다.
+function hueSat(c) {
+  const [r, g, b] = c.map((v) => v / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0 };
+}
+function sameBlockColor(a, b) {
+  const A = hueSat(a), B = hueSat(b);
+  if (A.s > 0.15 && B.s > 0.15) {
+    const dh = Math.abs(A.h - B.h);
+    return Math.min(dh, 360 - dh) < 22;
+  }
+  return dist(a, b) < 70;
 }
 
 // 한 열 안의 색칠된 칸(수업 블록) 찾기
@@ -313,7 +367,7 @@ function colorBlocks(img, col, y0, y1, bg, minH) {
     if (f.isFill) {
       const c = rowColor[i];
       // 굵은 흰 글씨 줄에서 잠깐 끊겨도 같은 색이면 한 칸으로 잇습니다.
-      if (cur && f.y - cur.end <= 14 && dist(c, cur.color) < 70) { cur.end = f.y; return; }
+      if (cur && f.y - cur.end <= 14 && sameBlockColor(c, cur.color)) { cur.end = f.y; return; }
       if (cur) runs.push(cur);
       cur = { start: f.y, end: f.y, color: c };
     }
@@ -327,7 +381,21 @@ function colorBlocks(img, col, y0, y1, bg, minH) {
     if (prev && r.start - prev.end <= 14 && (short(prev) || short(r))) { prev.end = r.end; return; }
     merged.push({ ...r });
   });
-  return merged.filter((r) => r.end - r.start + 1 >= minH).map((r) => ({ top: r.start, bottom: r.end + 1 }));
+  // 흐린 사진은 칸 테두리가 번져서 위·아래로 몇 px 넓게 잡힙니다(시작이 5분 이르게 나옴).
+  // 칸의 실제 색에 가까운 픽셀이 대부분인 줄부터를 진짜 테두리로 봅니다.
+  const y0i = Math.max(0, Math.round(y0));
+  const solid = (y, color) => {
+    let n = 0, t = 0;
+    for (let x = xa; x < xb; x += 2) { t += 1; if (dist(px(img, x, y), color) < 50) n += 1; }
+    return t ? n / t : 0;
+  };
+  return merged.filter((r) => r.end - r.start + 1 >= minH).map((r) => {
+    const cols = rowColor.slice(r.start - y0i, r.end - y0i + 1).filter(Boolean);
+    const color = [0, 1, 2].map((k) => median(cols.map((c) => c[k])));
+    let top = r.start;
+    while (top < r.start + 14 && top < r.end && solid(top, color) < 0.6) top += 1;
+    return { top, bottom: r.end + 1 }; // 아래 테두리는 원래 값이 더 정확했음 (실측)
+  });
 }
 
 // 세로 표 선이 보이면 열 경계를 선에 맞춥니다 (머리글 글자 폭만으로 잡으면 시간 눈금이 첫 열에 섞임).
@@ -534,6 +602,7 @@ async function parseGrid({ canvas, words, worker, getEngWorker, onProgress }) {
   if (gridLeft > 12) axisWords = await stripOcr(worker, canvas, 0, gridTop, Math.max(8, gridLeft - 2), img.height).then((r) => r.words).catch(() => []);
   let labels = parseTimeLabels(axisWords, gridLeft, headerBottom);
   if (labels.length < 2) labels = parseTimeLabels(words, gridLeft, headerBottom);
+  labels = normalizeHourLabels(labels);
   // 흰 수업 칸이 선을 가리는 경우가 있어 60%만 이어져도 표 선으로 봅니다.
   const fullLines = horizontalLines(img, gridLeft, gridRight, gridTop, img.height, bg, 0.6);
   let anchors = labels.map((l) => ({ min: l.min, y: l.bbox.y0 - 2, cy: (l.bbox.y0 + l.bbox.y1) / 2, h: l.bbox.y1 - l.bbox.y0 }));
@@ -551,18 +620,33 @@ async function parseGrid({ canvas, words, worker, getEngWorker, onProgress }) {
     const snapped = anchors.filter((a) => a.snapped);
     fit = fitLine(snapped.length >= 2 ? snapped : anchors) || fit;
   }
-  const yToMin = (y) => (fit ? round5(Math.round(fit.a * y + fit.b)) : null);
-  const minH = fit ? Math.max(12, 20 / fit.a) : 24;
+  // 말이 안 되는 눈금 해석(격자 한 칸이 18시간 넘게 걸침 등)은 버리고 시간을 비워 둡니다 (틀린 시간보다 빈칸이 낫다).
+  let gridBottom = fullLines.length && fullLines[fullLines.length - 1] > gridTop + 100 ? fullLines[fullLines.length - 1] : img.height;
+  if (fit) {
+    const startMin = fit.a * gridTop + fit.b, spanMin = fit.a * (gridBottom - gridTop);
+    if (startMin < 5 * 60 || startMin > 14 * 60 || spanMin < 3 * 60 || spanMin > 18 * 60) fit = null;
+  }
+  // 표 아래 "경제학입문"처럼 시간 없는 과목 목록은 표 밖이므로, 마지막 눈금 1시간 뒤에서 표를 끝냅니다.
+  if (fit && labels.length) {
+    const lastMin = Math.max(...labels.map((l) => l.min));
+    const yEnd = (lastMin + 60 - fit.b) / fit.a + 6;
+    if (yEnd > gridTop + 50) gridBottom = Math.min(gridBottom, yEnd);
+  }
+  let delta = 0; // 전체 시간 보정값(분). 칸을 다 찾은 뒤에 정합니다.
+  const yToMin = (y) => (fit ? round5(Math.round(fit.a * y + fit.b + delta)) : null);
+  // 칸 최소 높이는 시간 눈금과 무관하게 열 폭으로도 잡아서, 눈금을 잘못 읽어도 수업 칸을 놓치지 않게 합니다.
+  const colW = median(cols.map((c) => c.right - c.left));
+  const minH = Math.max(12, Math.min(fit ? 20 / fit.a : Infinity, colW * 0.3));
 
   // 칸 찾기: 색칠된 칸 우선, 없으면 글자 뭉치
   let blocks = [];
-  cols.forEach((col) => colorBlocks(img, col, gridTop, img.height, bg, minH).forEach((b) => blocks.push({ col, ...b, fromColor: true })));
+  cols.forEach((col) => colorBlocks(img, col, gridTop, gridBottom, bg, minH).forEach((b) => blocks.push({ col, ...b, fromColor: true })));
   if (!blocks.length) {
     // 색칸이 없는 흰 표: 열마다 따로 OCR한 뒤 글자 뭉치를 수업 하나로 봅니다.
     for (let ci = 0; ci < cols.length; ci += 1) {
       const col = cols[ci];
       onProgress(`${col.day}요일 칸 읽는 중… ${ci + 1}/${cols.length}`);
-      const { lines: colLines } = await stripOcr(worker, canvas, col.left + 3, gridTop, col.right - 3, img.height).catch(() => ({ lines: [] }));
+      const { lines: colLines } = await stripOcr(worker, canvas, col.left + 3, gridTop, col.right - 3, gridBottom).catch(() => ({ lines: [] }));
       const lh = median(colLines.map((l) => l.bbox.y1 - l.bbox.y0)) || 20;
       const inCol = colLines
         .filter((l) => /[가-힣A-Za-z0-9]/.test(l.text))
@@ -595,6 +679,16 @@ async function parseGrid({ canvas, words, worker, getEngWorker, onProgress }) {
     }
   }
   blocks = blocks.slice(0, 40);
+
+  // 수업 칸 테두리는 거의 항상 5분 단위(9:00, 10:15…)에 걸쳐 있습니다.
+  // 흐린 사진은 모든 칸이 한쪽으로 1~2분씩 같이 밀려서 반올림하면 5분 틀어지므로,
+  // 칸 테두리들의 '5분 주기 위상' 평균으로 밀린 만큼을 한 번에 되돌립니다 (서로 합의가 될 때만).
+  if (fit && blocks.length >= 2) {
+    const edges = blocks.flatMap((b) => [fit.a * b.top + fit.b, fit.a * b.bottom + fit.b]);
+    let cx = 0, cy = 0;
+    edges.forEach((m) => { const ang = (2 * Math.PI * m) / 5; cx += Math.cos(ang); cy += Math.sin(ang); });
+    if (Math.hypot(cx, cy) / edges.length >= 0.5) delta = -(Math.atan2(cy, cx) / (2 * Math.PI)) * 5;
+  }
 
   const rows = [];
   for (let i = 0; i < blocks.length; i += 1) {

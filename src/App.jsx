@@ -33,7 +33,10 @@ import {
 } from "lucide-react";
 
 const GLOBAL_STYLE = `
+
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* 실제 폰(좁은 화면)에서는 가짜 상태바(시간·배터리·노치)를 숨깁니다. PC에서는 폰 모양 디자인 그대로 */
+@media (max-width: 500px) { .fake-status { display: none !important; } }
 @keyframes planCardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes popIn { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -569,6 +572,9 @@ export default function TodayGapPlanner() {
   const [ttProgress, setTtProgress] = useState(""); // 무료 OCR 진행 문구
   const ttInputRef = useRef(null);
   const [openBook, setOpenBook] = useState(null);
+  const [shelfEdit, setShelfEdit] = useState(false);   // 책장 편집(삭제) 모드
+  const [newBookName, setNewBookName] = useState("");  // 책 직접 추가 입력칸
+  const [showAddBook, setShowAddBook] = useState(false);
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfPages, setPdfPages] = useState(null);
   const [pdfFrom, setPdfFrom] = useState("1");
@@ -818,6 +824,42 @@ export default function TodayGapPlanner() {
   }
   function getBook(name) {
     return shelf[name] || { entries: [], color: null };
+  }
+  // 책장 목록 = 시간표 과목 + 직접 추가한 책 − 지운(숨긴) 책. 목록 정보는 shelf.__books에 함께 저장합니다.
+  function shelfBookNames() {
+    const meta = shelf.__books || {};
+    const hidden = new Set(meta.hidden || []);
+    const names = [...subjectsFromClasses(data?.classes || []), ...(meta.custom || [])];
+    return [...new Set(names)].filter((n) => n && !hidden.has(n));
+  }
+  function addShelfBook() {
+    const name = newBookName.trim().slice(0, 30);
+    if (!name || name === "__books") return;
+    updateShelf((prev) => {
+      const meta = prev.__books || {};
+      const custom = [...new Set([...(meta.custom || []), name])];
+      const hidden = (meta.hidden || []).filter((n) => n !== name); // 지웠던 책을 다시 추가하면 되살림
+      return { ...prev, __books: { ...meta, custom, hidden } };
+    });
+    setNewBookName("");
+    setShowAddBook(false);
+  }
+  function deleteShelfBook(name) {
+    const cnt = (shelf[name]?.entries || []).length;
+    if (cnt > 0 && !window.confirm(`'${name}' 책의 자료 ${cnt}개도 함께 지워져요. 지울까요?`)) return;
+    updateShelf((prev) => {
+      const meta = prev.__books || {};
+      const next = { ...prev };
+      delete next[name];
+      const fromTimetable = subjectsFromClasses(data?.classes || []).includes(name);
+      next.__books = {
+        ...meta,
+        custom: (meta.custom || []).filter((n) => n !== name),
+        // 시간표 과목은 시간표에 남아 있으니 책장에서만 숨깁니다.
+        hidden: fromTimetable ? [...new Set([...(meta.hidden || []), name])] : (meta.hidden || []),
+      };
+      return next;
+    });
   }
   function addEntry(subject, patch) {
     updateShelf((prev) => {
@@ -1694,8 +1736,8 @@ ${slotList || "(없음)"}
       <style>{GLOBAL_STYLE}</style>
       <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: "rgba(255,253,252,.76)", border: "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(102,71,68,.42)", backdropFilter: "blur(12px)" }}>
         <div className="gingham" style={{ backgroundColor: COLORS.paper, borderRadius: 31, overflow: "hidden", position: "relative", minHeight: 760, display: "flex", flexDirection: "column", fontFamily: "'Gowun Dodum', 'IBM Plex Sans KR', sans-serif", color: COLORS.ink, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.75)" }}>
-          <div style={{ position: "absolute", top: 9, left: "50%", transform: "translateX(-50%)", width: 76, height: 20, background: "#5C4A48", borderRadius: 14, zIndex: 20, opacity: .92 }} />
-          <div className="flex items-center justify-between px-6 pt-3.5 pb-1">
+          <div className="fake-status" style={{ position: "absolute", top: 9, left: "50%", transform: "translateX(-50%)", width: 76, height: 20, background: "#5C4A48", borderRadius: 14, zIndex: 20, opacity: .92 }} />
+          <div className="fake-status flex items-center justify-between px-6 pt-3.5 pb-1">
             <span className="text-xs font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{nowHHMM()}</span>
             <StatusIcons colors={COLORS} />
           </div>
@@ -1725,7 +1767,7 @@ ${slotList || "(없음)"}
               </div>
             </div>
           ) : (
-          <div className="px-4 pb-3 flex-1 overflow-y-auto">
+          <div className={`px-4 pb-3 overflow-y-auto ${activeTab === "shelf" || activeTab === "diary" ? "" : "flex-1"}`}>
           {saveWarning && (
             <div className="flex items-center gap-2 text-xs rounded-xl px-3 py-2 mt-2 mb-2" style={{ background: "#FFE8E8", color: "#B3261E" }}>
               <AlertCircle size={14} />
@@ -2684,42 +2726,68 @@ ${slotList || "(없음)"}
           )}
 
           {activeTab === "shelf" && (
-            <div className="px-4 pt-4 pb-6">
+            // 책장은 위 스크롤 영역 밖에 있어서, 빈 스크롤 영역이 자리를 차지해 위가 텅 비어 보였음 → 책장이 남은 높이를 직접 채움
+            <div className="px-4 pt-4 pb-6 flex-1 overflow-y-auto" style={{minHeight:0}}>
               {!openBook && (
                 <>
-                  <div className="flex items-end justify-between mb-3">
-                    <div>
+                  <div className="flex items-end justify-between gap-2 mb-3">
+                    <div className="min-w-0">
                       <div className="text-base font-semibold">책장</div>
-                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>시간표 과목이 책으로 꽂혀요</div>
+                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>시간표 과목이 책으로 꽂혀요 · 직접 추가도 돼요</div>
                     </div>
                     <div className="text-right">
-                      <button onClick={() => setScanOpen(true)} className="text-[11px] px-2.5 py-1 rounded-full mb-1"
-                        style={{background:COLORS.mint,color:"#fff"}}>교재 스캔</button>
+                      <div className="flex gap-1 justify-end mb-1">
+                        <button onClick={() => { setShowAddBook((v) => !v); setShelfEdit(false); }} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap"
+                          style={{background:COLORS.paper,color:COLORS.ink,border:`1px solid ${COLORS.ruleLine}`}}>+ 책</button>
+                        {shelfBookNames().length > 0 && (
+                          <button onClick={() => { setShelfEdit((v) => !v); setShowAddBook(false); }} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap"
+                            style={{background:shelfEdit?COLORS.ink:COLORS.paper,color:shelfEdit?"#fff":COLORS.ink,border:`1px solid ${COLORS.ruleLine}`}}>{shelfEdit ? "완료" : "편집"}</button>
+                        )}
+                        <button onClick={() => setScanOpen(true)} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap"
+                          style={{background:COLORS.mint,color:"#fff"}}>교재 스캔</button>
+                      </div>
                       <div className="text-[10px]" style={{color:COLORS.muted}}>
                         {(() => { const u = shelfUsage(shelf); return `자료 ${u.files}/${SHELF_LIMIT_FILES} · ${u.mb.toFixed(1)}/${SHELF_LIMIT_MB}MB`; })()}
                       </div>
                     </div>
                   </div>
 
-                  {subjectsFromClasses(data.classes).length === 0 ? (
+                  {showAddBook && (
+                    <div className="flex gap-1.5 mb-3">
+                      <input value={newBookName} onChange={(e) => setNewBookName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") addShelfBook(); }}
+                        placeholder="책 이름 (예: 토익, 자격증 공부)" autoFocus
+                        className="flex-1 min-w-0 text-xs rounded-xl px-3 py-2" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.ink}} />
+                      <button onClick={addShelfBook} disabled={!newBookName.trim()} className="text-xs px-3 py-2 rounded-xl"
+                        style={{background:COLORS.ink,color:"#fff",opacity:newBookName.trim()?1:.4}}>추가</button>
+                    </div>
+                  )}
+                  {shelfBookNames().length === 0 ? (
                     <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <BookOpen size={28} style={{margin:"0 auto 8px",color:COLORS.muted}}/>
                       <div className="text-sm font-semibold mb-1">아직 책이 없어요</div>
-                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣으면 과목마다 책이 한 권씩 생겨요</div>
+                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣거나, 위의 '+ 책'으로 직접 추가해요</div>
                       <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
-                      {subjectsFromClasses(data.classes).map((name, i) => {
+                      {shelfBookNames().map((name, i) => {
                         const book = getBook(name);
                         const cnt = (book.entries || []).length;
                         const need = (book.entries || []).filter((e) => e.understand === "review" || e.understand === "no").length;
                         const col = BOOK_COLORS[i % BOOK_COLORS.length];
                         return (
-                          <button key={name} onClick={() => setOpenBook(name)}
+                          <button key={name} onClick={() => (shelfEdit ? deleteShelfBook(name) : setOpenBook(name))}
                             className="relative rounded-lg text-left p-2.5"
-                            style={{aspectRatio:"3/4",background:col,boxShadow:"0 4px 10px rgba(119,84,80,.18)",overflow:"hidden"}}>
+                            aria-label={shelfEdit ? `${name} 책 지우기` : `${name} 책 열기`}
+                            style={{aspectRatio:"3/4",background:col,boxShadow:"0 4px 10px rgba(119,84,80,.18)",overflow:"hidden",
+                              animation: shelfEdit ? "none" : undefined, outline: shelfEdit ? "2px dashed rgba(255,255,255,.85)" : "none", outlineOffset: -5}}>
                             <div style={{position:"absolute",left:0,top:0,bottom:0,width:9,background:"rgba(0,0,0,.14)"}}/>
+                            {shelfEdit && (
+                              <div style={{position:"absolute",top:5,right:5,width:20,height:20,borderRadius:10,background:"rgba(0,0,0,.45)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>
+                                <X size={12} style={{stroke:"#fff"}}/>
+                              </div>
+                            )}
                             <div className="flex flex-col h-full justify-between" style={{paddingLeft:8}}>
                               <div className="text-[11px] font-bold leading-tight" style={{color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.18)"}}>{name}</div>
                               <div>
