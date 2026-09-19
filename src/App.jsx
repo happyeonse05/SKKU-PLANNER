@@ -515,6 +515,8 @@ export default function TodayGapPlanner() {
   const [taskSearch, setTaskSearch] = useState("");
   const [hideCompleted, setHideCompleted] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
+  const [onboardDismissed, setOnboardDismissed] = useState(() => { try { return localStorage.getItem("damda-onboard-v1") === "1"; } catch { return true; } });
+  function dismissOnboard() { try { localStorage.setItem("damda-onboard-v1", "1"); } catch {} setOnboardDismissed(true); }
   const [statsRange, setStatsRange] = useState(7);
   const [energyLevel, setEnergyLevel] = useState("보통");
   const [newTask, setNewTask] = useState({ name: "", due: "", start: todayKey(), estMin: "", noDue: false, estUnknown: false });
@@ -546,6 +548,7 @@ export default function TodayGapPlanner() {
   const [prepDraft, setPrepDraft] = useState("");
   const [prepEditing, setPrepEditing] = useState(false);
   const [recording, setRecording] = useState(null);
+  const [trBusyId, setTrBusyId] = useState(null);
   const recRef = useRef(null);
   const fileInputRef = useRef(null);
   const saveQueueRef = useRef(Promise.resolve());
@@ -777,10 +780,11 @@ export default function TodayGapPlanner() {
   }
   async function analyzeProfessorStyle(subject) {
     const book = getBook(subject);
-    const pdfs = (book.entries || []).flatMap((entry) => entry.files || [])
-      .filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
-    if (!pdfs.length) {
-      setAnalysisError("먼저 회차의 ‘자료 추가’로 강의계획서·PPT·대본·족보 PDF를 넣어 주세요.");
+    const allFiles = (book.entries || []).flatMap((entry) => entry.files || []);
+    const pdfs = allFiles.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
+    const transcripts = allFiles.filter((file) => file.type === "transcript" && file.text);
+    if (!pdfs.length && !transcripts.length) {
+      setAnalysisError("먼저 회차의 ‘자료 추가’로 강의계획서·PPT·대본·족보 PDF를 넣거나 수업을 녹음해 주세요.");
       return;
     }
     setAnalysisLoading(true); setAnalysisError("");
@@ -793,6 +797,9 @@ export default function TodayGapPlanner() {
         const end = Math.min(first.pageCount, 20);
         const extracted = end > 1 ? await extractPdfPages(file, 1, end) : first;
         parts.push(`[자료: ${record.name} · 1~${extracted.end}페이지]\n${extracted.text}`);
+      }
+      for (const t of transcripts.slice(0, 4)) {
+        parts.push(`[자료: ${t.name} · 녹음 대본]\n${(t.text || "").slice(0, 20000)}`);
       }
       const sourceText = parts.join("\n\n====================\n\n").slice(0, 90000);
       if (sourceText.replace(/\[자료:[^\n]+\]/g, "").trim().length < 50)
@@ -825,13 +832,34 @@ ${sourceText}`;
         : (rd.content || []).map((b2) => b2.text || "").join("\n");
       if (!text.trim()) throw new Error("분석 결과가 비어 있어요.");
       addEntry(subject, {
-        memo: `[교수님 출제 스타일 분석 · ${pdfs.length}개 PDF]\n` + text.trim(),
+        memo: `[교수님 출제 스타일 분석 · ${pdfs.length + transcripts.length}개 자료]\n` + text.trim(),
         understand: "review",
-        source: { kind: "AI 분석", name: pdfs.slice(0, 8).map((f) => f.name).join(", "), mode: "강의계획서·PPT·대본·족보 비교" },
+        source: { kind: "AI 분석", name: [...pdfs.slice(0, 8), ...transcripts.slice(0, 4)].map((f) => f.name).join(", "), mode: "강의계획서·PPT·대본·족보 비교" },
       });
     } catch (e) {
       setAnalysisError(e?.message || "출제 스타일을 분석하지 못했어요.");
     } finally { setAnalysisLoading(false); }
+  }
+  async function summarizeTranscript(subject, record) {
+    if (!record?.text) return;
+    setTrBusyId(record.id); setSumError("");
+    try {
+      const prompt = `너는 대학 수업자료 정리 도우미야. ${SUMMARY_MODES["대본 3종 정리"]}\n\n과목: ${subject}\n자료: ${record.name}\n\n원문:\n${record.text.slice(0, 80000)}\n\n한국어로만 답하고 원문에 없는 사실은 만들지 마.`;
+      const res = await fetch(SUMMARY_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
+      const rd = await res.json();
+      if (!res.ok) throw new Error(rd.error || "필기본을 만들지 못했어요.");
+      const text = typeof rd.text === "string" ? rd.text
+        : typeof rd.content === "string" ? rd.content
+        : (rd.content || []).map((b2) => b2.text || "").join("\n");
+      if (!text.trim()) throw new Error("결과가 비어 있어요.");
+      addEntry(subject, {
+        memo: `[대본 3종 정리 · ${record.name}]\n` + text.trim(),
+        understand: "review",
+        source: { kind: "녹음 대본", name: record.name, mode: "대본 3종 정리" },
+      });
+    } catch (e) {
+      setSumError(e?.message || "필기본을 만들지 못했어요.");
+    } finally { setTrBusyId(null); }
   }
 
   async function attachFiles(subject, entryId, fileList) {
@@ -863,18 +891,35 @@ ${sourceText}`;
       const mr = new MediaRecorder(stream);
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      // 라이브 텍스트 변환 — 지원 브라우저(크롬 최적)에서 녹음과 동시에 대본을 만들어요
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const finals = [];
+      let rc = null;
+      if (SR) {
+        try {
+          rc = new SR();
+          rc.lang = "ko-KR"; rc.continuous = true; rc.interimResults = false;
+          rc.onresult = (ev) => { for (let i = ev.resultIndex; i < ev.results.length; i++) { if (ev.results[i].isFinal) finals.push(ev.results[i][0].transcript.trim()); } };
+          rc.onend = () => { if (recRef.current === mr) { try { rc.start(); } catch {} } };
+          rc.start();
+        } catch { rc = null; }
+      }
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (rc) { try { rc.onend = null; rc.stop(); } catch {} }
         const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
         const url = await new Promise((res) => {
           const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob);
         });
         const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
-        const rec = { id: `r${Date.now()}`, name: `녹음 ${mins}분`, size: blob.size, type: "audio", url };
+        const stamp = Date.now();
+        const rec = { id: `r${stamp}`, name: `녹음 ${mins}분`, size: blob.size, type: "audio", url };
+        const spoken = finals.join(" ").replace(/\s+/g, " ").trim();
+        const tr = spoken.length >= 20 ? { id: `t${stamp}`, name: `녹음 대본 ${mins}분`, size: spoken.length, type: "transcript", text: spoken } : null;
         updateShelf((prev) => {
           const book = prev[subject]; if (!book) return prev;
           return { ...prev, [subject]: { ...book,
-            entries: book.entries.map((en) => (en.id === entryId ? { ...en, files: [...(en.files || []), rec] } : en)) } };
+            entries: book.entries.map((en) => (en.id === entryId ? { ...en, files: [...(en.files || []), rec, ...(tr ? [tr] : [])] } : en)) } };
         });
         setRecording(null); recRef.current = null;
       };
@@ -1471,6 +1516,29 @@ ${slotList || "(없음)"}
             </div>
           ) : (
           <div className="px-4 pb-3 flex-1 overflow-y-auto">
+          {data && (data.classes || []).length === 0 && !onboardDismissed && (
+            <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(61,48,44,.45)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+              <div className="w-full rounded-3xl p-5" style={{maxWidth:340,background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`,boxShadow:"0 20px 50px rgba(0,0,0,.18)"}}>
+                <div className="text-lg font-bold mb-1">담다에 온 걸 환영해요 🌷</div>
+                <div className="text-xs mb-4" style={{color:COLORS.muted}}>딱 하나만 하면 준비 끝! 시간표를 등록하면 공강을 자동으로 찾아드려요.</div>
+                <div className="rounded-2xl p-3 mb-2" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
+                  <div className="text-xs font-bold mb-0.5">1 · 시간표 등록</div>
+                  <div className="text-[11px]" style={{color:COLORS.muted}}>킹고포털 시간표 캡처를 올리면 자동으로 읽어요</div>
+                </div>
+                <div className="rounded-2xl p-3 mb-2" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
+                  <div className="text-xs font-bold mb-0.5">2 · 과제 담기</div>
+                  <div className="text-[11px]" style={{color:COLORS.muted}}>마감 있는 과제를 넣으면 마감함이 챙겨드려요</div>
+                </div>
+                <div className="rounded-2xl p-3 mb-4" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
+                  <div className="text-xs font-bold mb-0.5">3 · 틈 자동 매칭</div>
+                  <div className="text-[11px]" style={{color:COLORS.muted}}>공강 길이·마감·에너지에 맞는 할 일을 골라드려요</div>
+                </div>
+                <button onClick={() => { dismissOnboard(); setActiveTab("calendar"); }} className="w-full text-sm py-2.5 rounded-full mb-1.5" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
+                <button onClick={dismissOnboard} className="w-full text-xs py-2 rounded-full" style={{background:"transparent",color:COLORS.muted}}>나중에 할게요</button>
+              </div>
+            </div>
+          )}
+
           {activeTab === "home" && (
             <>
             {(() => {
@@ -2438,7 +2506,7 @@ ${slotList || "(없음)"}
 
                     <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <div className="text-xs font-bold mb-1">PDF·녹음 대본에서 필요한 페이지만 정리</div>
-                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>녹음 대본 PDF는 ‘대본 3종 정리’를 누르면 보존형·핵심 요약·필기본을 한 번에 만들어요. AI 결과는 참고용이에요.</div>
+                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>크롬에서 녹음하면 대본이 자동으로 만들어져요. 대본 옆 ‘필기본 만들기’를 누르면 보존형·핵심 요약·필기본을 한 번에 정리해요. AI 결과는 참고용이에요.</div>
                       <label className="flex items-center justify-center gap-2 w-full rounded-xl py-2.5 text-xs cursor-pointer mb-2"
                         style={{background:COLORS.card,border:`1px dashed ${COLORS.muted}`}}>
                         {pdfFile ? `${pdfFile.name.slice(0,22)}${pdfPages?` · ${pdfPages}p`:""}` : "PDF 선택"}
@@ -2472,7 +2540,7 @@ ${slotList || "(없음)"}
                     {entries.length === 0 && (
                       <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                         <div className="text-sm font-semibold mb-1">첫 수업을 기록해 볼까요?</div>
-                        <div className="text-xs" style={{color:COLORS.muted}}>녹음 · 자료 · 메모 3줄을 회차별로 모아둬요</div>
+                        <div className="text-xs" style={{color:COLORS.muted}}>녹음 · 자료 · 수업 노트를 회차별로 모아둬요</div>
                       </div>
                     )}
 
@@ -2501,7 +2569,7 @@ ${slotList || "(없음)"}
                             )}
 
                             <textarea value={en.memo} onChange={(e) => patchEntry(openBook, en.id, { memo: e.target.value })}
-                              rows={3} placeholder="핵심 3줄만 남겨보기"
+                              rows={en.memo && en.memo.length > 160 ? 12 : 4} placeholder="이 회차 수업 노트를 자유롭게 적어요 — 길게 써도 돼요"
                               className="w-full text-sm rounded-xl px-2.5 py-2 mb-2"
                               style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,resize:"none",color:COLORS.ink}}/>
 
@@ -2519,9 +2587,16 @@ ${slotList || "(없음)"}
                               <div className="flex flex-col gap-1 mb-2">
                                 {en.files.map((f) => (
                                   <div key={f.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{background:COLORS.paper}}>
-                                    <span className="text-[11px] flex-1 truncate">{f.type === "audio" ? "🎙 " : "📎 "}{f.name}</span>
-                                    <span className="text-[9px]" style={{color:COLORS.muted}}>{fmtSize(f.size)}</span>
-                                    <a href={f.url} download={f.name} className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>열기</a>
+                                    <span className="text-[11px] flex-1 truncate">{f.type === "audio" ? "🎙 " : f.type === "transcript" ? "📝 " : "📎 "}{f.name}</span>
+                                    {f.type !== "transcript" && <span className="text-[9px]" style={{color:COLORS.muted}}>{fmtSize(f.size)}</span>}
+                                    {f.type === "transcript" ? (
+                                      <button onClick={() => summarizeTranscript(openBook, f)} disabled={trBusyId === f.id}
+                                        className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff",opacity:trBusyId===f.id?0.6:1,whiteSpace:"nowrap"}}>
+                                        {trBusyId === f.id ? "만드는 중…" : "필기본 만들기"}
+                                      </button>
+                                    ) : (
+                                      <a href={f.url} download={f.name} className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>열기</a>
+                                    )}
                                   </div>
                                 ))}
                               </div>
