@@ -530,7 +530,7 @@ export default function TodayGapPlanner() {
   const [celebrateMilestone, setCelebrateMilestone] = useState(null);
 
   const [themeName, setThemeName] = useState(() => {
-    try { return localStorage.getItem(THEME_KEY) || "핑크"; } catch (e) { return "핑크"; }
+    try { return localStorage.getItem(THEME_KEY) || "남색"; } catch (e) { return "남색"; }
   });
   function pickTheme(name) {
     setThemeName(name);
