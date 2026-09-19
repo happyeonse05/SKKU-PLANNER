@@ -128,8 +128,8 @@ const CHORE_PRESETS = [
 const CLASS_TYPES = ["수업", "알바", "동아리", "기타"];
 
 /* ===== 책장 ===== */
-const DIARY_SRC = "diary.html";
-const SCAN_SRC = "scan.html";
+const DIARY_SRC = "diary/index.html";
+const SCAN_SRC = "scan/index.html";
 /* 공지 데이터 주소 — GitHub에 크롤러 올린 뒤 아래 USER/REPO만 바꾸면 돼 */
 const JOBS_URL = "https://raw.githubusercontent.com/happyeonse05/skku-jobs/main/data/jobs.json";
 const JOBS_HIDE_KEY = "teum-jobs-hide-v1";
@@ -1084,6 +1084,7 @@ ${sourceText}`;
     ? data.tasks.filter((t) => {
         if (t.due && data.completed[t.id]) return false;
         if (data.postponed[t.id] === today) return false;
+        if (t.start && t.start > today) return false;
         return true;
       })
     : [];
@@ -1961,14 +1962,14 @@ ${slotList || "(없음)"}
               </div>
               <div className="flex flex-col gap-2">
                 {data.tasks.filter(t => t.name.toLowerCase().includes(taskSearch.toLowerCase())).filter(t => !(hideCompleted && data.completed[t.id])).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999')).map(t => {
-                  const done=!!data.completed[t.id]; const chore=!t.due;
+                  const done=!!data.completed[t.id]; const chore=!t.due; const notStarted = t.start && t.start > todayKey();
                   return <div key={t.id} className="pretty-card rounded-2xl p-3.5" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`,opacity:done?.62:1}}>
                     {editingTaskId===t.id ? <div className="flex flex-col gap-2">
                       <input value={editForm.name} onChange={e=>setEditForm({...editForm,name:e.target.value})} className="border rounded px-2 py-1.5 text-sm" style={inputStyle}/>
                       {!editForm.noDue && <div className="flex gap-2"><input type="date" value={editForm.start} onChange={e=>setEditForm({...editForm,start:e.target.value})} className="border rounded px-2 py-1 text-xs" style={inputStyle}/><input type="date" value={editForm.due} onChange={e=>setEditForm({...editForm,due:e.target.value})} className="border rounded px-2 py-1 text-xs" style={inputStyle}/></div>}
                       <div className="flex gap-2"><button onClick={saveEditTask} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.ink,color:'#fff'}}>저장</button><button onClick={()=>setEditingTaskId(null)} className="text-xs">취소</button></div>
                     </div> : <>
-                      <div className="flex justify-between gap-2"><div><div className="font-semibold text-sm" style={{textDecoration:done?'line-through':'none'}}>{t.name}</div><div className="text-xs mt-1" style={{color:COLORS.muted}}>{chore ? `생활 루틴 · ${(data.choreHistory?.[t.id]||[]).length}회 기록` : `${t.start||t.due} → ${t.due} · ${ddayLabel(daysUntil(t.due))}`} {t.estMin ? `· ${t.estMin}분` : ''}</div></div><div className="flex gap-1"><button onClick={()=>startEditTask(t)} style={{color:COLORS.muted}}><Pencil size={14}/></button><button onClick={()=>deleteTask(t.id)} style={{color:COLORS.coral}}><Trash2 size={14}/></button></div></div>
+                      <div className="flex justify-between gap-2"><div><div className="font-semibold text-sm" style={{textDecoration:done?'line-through':'none'}}>{t.name}{notStarted && <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-1.5" style={{background:COLORS.paper,color:COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{t.start} 시작</span>}</div><div className="text-xs mt-1" style={{color:COLORS.muted}}>{chore ? `생활 루틴 · ${(data.choreHistory?.[t.id]||[]).length}회 기록` : `${t.start||t.due} → ${t.due} · ${ddayLabel(daysUntil(t.due))}`} {t.estMin ? `· ${t.estMin}분` : ''}</div></div><div className="flex gap-1"><button onClick={()=>startEditTask(t)} style={{color:COLORS.muted}}><Pencil size={14}/></button><button onClick={()=>deleteTask(t.id)} style={{color:COLORS.coral}}><Trash2 size={14}/></button></div></div>
                       <div className="flex gap-2 mt-3 flex-wrap">{done ? <button onClick={()=>undoComplete(t.id)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>완료 취소</button> : <button onClick={()=>markComplete(t.name)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.mint,color:'#fff'}}><Check size={12} style={{display:'inline'}}/> {chore?'기록':'완료'}</button>}
                       {!chore && !done && <button onClick={()=>applySplit(t)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>공강에 나누기</button>}
                       {data.splits?.[t.id] && <button onClick={()=>clearSplit(t.id)} className="text-xs px-2 py-1 rounded-full" style={{color:COLORS.muted}}>계획 지우기</button>}</div>
@@ -2454,6 +2455,8 @@ ${slotList || "(없음)"}
                       <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
                     </div>
                   ) : (
+                    <>
+                    <div className="text-[10px] mb-2 rounded-xl px-2.5 py-2" style={{background:COLORS.paper,color:COLORS.muted,border:`1px dashed ${COLORS.ruleLine}`}}>📖 책을 열면 녹음(자동 대본) · 자료 · AI 요약 · 교수님 출제 분석을 쓸 수 있어요</div>
                     <div className="grid grid-cols-3 gap-3">
                       {subjectsFromClasses(data.classes).map((name, i) => {
                         const book = getBook(name);
@@ -2476,6 +2479,7 @@ ${slotList || "(없음)"}
                         );
                       })}
                     </div>
+                    </>
                   )}
                 </>
               )}
