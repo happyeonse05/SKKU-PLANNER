@@ -1,19 +1,19 @@
 {
  "name": "담다",
  "short_name": "담다",
- "start_url": "/",
- "scope": "/",
+ "start_url": "./",
+ "scope": "./",
  "display": "standalone",
- "background_color": "#EAEEF5",
- "theme_color": "#41598A",
+ "background_color": "#FBECEF",
+ "theme_color": "#D98795",
  "icons": [
   {
-   "src": "/icon-192.png",
+   "src": "icon-192.png",
    "sizes": "192x192",
    "type": "image/png"
   },
   {
-   "src": "/icon-512.png",
+   "src": "icon-512.png",
    "sizes": "512x512",
    "type": "image/png"
   }

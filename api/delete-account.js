@@ -1,4 +1,34 @@
+const DEFAULT_ALLOWED_ORIGINS = ["https://happyeonse05.github.io"];
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let originHost = "";
+  try { originHost = new URL(origin).host; } catch (e) {}
+  const hosts = [req.headers["x-forwarded-host"], req.headers.host]
+    .filter(Boolean)
+    .flatMap((h) => String(h).split(",").map((x) => x.trim()));
+  const extra = String(process.env.ALLOWED_ORIGINS || "")
+    .split(",").map((x) => x.trim().replace(/\/+$/, "")).filter(Boolean);
+  const allowed = hosts.includes(originHost) || [...DEFAULT_ALLOWED_ORIGINS, ...extra].includes(origin);
+  if (!allowed) return false;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  return true;
+}
+
 export default async function handler(req, res) {
+  if (!applyCors(req, res)) {
+    res.status(403).json({ error: "허용되지 않은 주소에서 온 요청이에요." });
+    return;
+  }
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
     return;

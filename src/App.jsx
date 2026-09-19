@@ -51,7 +51,7 @@ button, input, select { font-family: inherit; }
 
 /* Pencil-doodle icon treatment: preserves every button/action while making
    the existing SVG icon set feel hand-drawn instead of like phone emoji. */
-svg.lucide { stroke:currentColor; stroke-width:1.55; filter:drop-shadow(.25px .35px 0 rgba(0,0,0,.10)); }
+svg.lucide { stroke:#9A7772; stroke-width:1.55; filter:drop-shadow(.25px .35px 0 rgba(168,144,120,.20)); }
 
 `;
 
@@ -69,31 +69,19 @@ const LIGHT_COLORS = {
   leaf: "#8EAF8F",
 };
 const DARK_COLORS = {
-  page: "#14161B",
-  paper: "#1B1E25",
-  card: "#232732",
-  ruleLine: "#333947",
-  ink: "#E9EBF2",
-  muted: "#98A1B3",
-  yellow: "#D9B45C",
-  coral: "#D9848E",
-  mint: "#63B49C",
-  strawberry: "#7C90C4",
-  leaf: "#7FA98F",
+  page: "#221720",
+  paper: "#2C1E29",
+  card: "#3A2733",
+  ruleLine: "#4A3540",
+  ink: "#FDEDF1",
+  muted: "#C79FB0",
+  yellow: "#FFD166",
+  coral: "#FF8080",
+  mint: "#3BD6C6",
 };
 
 const RANK_LABELS = ["1순위", "2순위", "3순위"];
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
-function pickMealDay(meals, t) {
-  const days = meals?.days || {};
-  if (days[t]) return { key: t, m: days[t], isToday: true };
-  const k = Object.keys(days).filter((d) => d > t).sort()[0];
-  return k ? { key: k, m: days[k], isToday: false } : null;
-}
-function mealDayLabel(md) {
-  if (!md) return "오늘 봉룡학사";
-  return md.isToday ? "오늘 봉룡학사" : `${WEEKDAY_LABELS[new Date(md.key).getDay()]}요일 봉룡학사 미리보기`;
-}
 const DAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
 const DOW_TO_DAY = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
 
@@ -101,34 +89,6 @@ const SUPABASE_URL = "https://vmwypncwbxgcyyvtprag.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Lv_yeQVMU-XuEW5Fu7_2IQ_EzJZ3Z2T";
 const SB_REFRESH_KEY = "sb-refresh-token-v1";
 const DARK_MODE_KEY = "dark-mode-v1";
-const THEME_KEY = "damda-theme-v1";
-const NAVY_COLORS = {
-  page: "#EAEEF5",
-  paper: "#F5F8FC",
-  card: "#FDFEFF",
-  ruleLine: "#D6DEEA",
-  ink: "#2E3D57",
-  muted: "#7E8CA6",
-  yellow: "#E8C989",
-  coral: "#8FA3C8",
-  mint: "#8FB0A6",
-  strawberry: "#41598A",
-  leaf: "#6E8FA0",
-};
-const GRAY_COLORS = {
-  page: "#F1F1F2",
-  paper: "#F9F9FA",
-  card: "#FFFFFF",
-  ruleLine: "#E3E3E6",
-  ink: "#3C3C3F",
-  muted: "#8E8E93",
-  yellow: "#C9C2AE",
-  coral: "#B4A6A8",
-  mint: "#A6B3AA",
-  strawberry: "#6E6E74",
-  leaf: "#8E9A8F",
-};
-const LIGHT_THEMES = { "핑크": LIGHT_COLORS, "남색": NAVY_COLORS, "회색": GRAY_COLORS };
 const NOTIF_DATE_KEY = "last-notif-date-v1";
 const MILESTONES = [7, 30, 100, 365];
 const LOCAL_EXTRAS_PREFIX = "today-gap-extras-v1:";
@@ -168,6 +128,7 @@ const CHORE_PRESETS = [
 const CLASS_TYPES = ["수업", "알바", "동아리", "기타"];
 
 /* ===== 책장 ===== */
+/* public/diary/index.html, public/scan/index.html 로 빌드되므로 폴더 경로를 씁니다. */
 const DIARY_SRC = "diary/index.html";
 const SCAN_SRC = "scan/index.html";
 /* 공지 데이터 주소 — GitHub에 크롤러 올린 뒤 아래 USER/REPO만 바꾸면 돼 */
@@ -187,6 +148,35 @@ const PLAN_API_URL = import.meta.env.VITE_PLAN_API_URL || "/api/plan";
 const SUMMARY_API_URL = import.meta.env.VITE_SUMMARY_API_URL || PLAN_API_URL;
 const VISION_API_URL = import.meta.env.VITE_VISION_API_URL || "/api/vision";
 const DELETE_ACCOUNT_API_URL = import.meta.env.VITE_DELETE_ACCOUNT_API_URL || "/api/delete-account";
+/* 책장 안 '낱장'(scan iframe)도 같은 서버 API를 쓰도록 주소만 넘겨줍니다. 키는 절대 넘기지 않습니다. */
+if (typeof window !== "undefined") {
+  window.__DAMDA_API__ = { plan: PLAN_API_URL, vision: VISION_API_URL };
+}
+
+/* 서버가 JSON이 아닌 응답(404 페이지, 용량 초과 등)을 돌려줘도 알아보기 쉬운 오류로 바꿉니다. */
+async function readApiJson(res) {
+  const raw = await res.text().catch(() => "");
+  let body = null;
+  try { body = raw ? JSON.parse(raw) : {}; } catch (e) { body = null; }
+  if (body && typeof body === "object") return body;
+  if (res.status === 404) return { error: "AI 서버(/api)를 찾지 못했어요. Vercel 배포 주소에서 열어 주세요." };
+  if (res.status === 413) return { error: "보내는 내용이 너무 커요. 범위를 줄여서 다시 시도해 주세요." };
+  if (res.status === 504) return { error: "AI 응답이 너무 오래 걸렸어요. 내용을 나눠서 다시 시도해 주세요." };
+  return { error: res.ok ? "AI 응답을 읽지 못했어요." : `AI 서버 오류가 났어요. (${res.status})` };
+}
+function aiTextOf(rd) {
+  if (!rd) return "";
+  if (typeof rd.text === "string") return rd.text;
+  if (typeof rd.content === "string") return rd.content;
+  return (Array.isArray(rd.content) ? rd.content : []).map((b) => b?.text || "").join("\n");
+}
+function normTime(t) {
+  const m = String(t || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]), mm = Number(m[2]);
+  if (h > 23 || mm > 59) return null;
+  return `${String(h).padStart(2, "0")}:${m[2]}`;
+}
 
 function loadShelf(userId) {
   try {
@@ -335,9 +325,9 @@ async function fetchUserRow(accessToken, userId) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?user_id=eq.${encodeURIComponent(userId)}&select=*`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${accessToken}` },
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error("데이터를 불러오지 못했어요.");
-  return json[0] || null;
+  const json = await res.json().catch(() => null);
+  if (!res.ok) { const err = new Error("데이터를 불러오지 못했어요."); err.status = res.status; throw err; }
+  return (Array.isArray(json) && json[0]) || null;
 }
 async function upsertUserRow(accessToken, userId, payload) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?on_conflict=user_id`, {
@@ -350,9 +340,9 @@ async function upsertUserRow(accessToken, userId, payload) {
     },
     body: JSON.stringify({ user_id: userId, ...payload }),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error("저장하지 못했어요.");
-  return json[0];
+  const json = await res.json().catch(() => null);
+  if (!res.ok) { const err = new Error("저장하지 못했어요."); err.status = res.status; throw err; }
+  return Array.isArray(json) ? json[0] : json;
 }
 
 function toKey(d) {
@@ -529,14 +519,7 @@ export default function TodayGapPlanner() {
   });
   const [celebrateMilestone, setCelebrateMilestone] = useState(null);
 
-  const [themeName, setThemeName] = useState(() => {
-    try { return localStorage.getItem(THEME_KEY) || "남색"; } catch (e) { return "남색"; }
-  });
-  function pickTheme(name) {
-    setThemeName(name);
-    try { localStorage.setItem(THEME_KEY, name); } catch (e) {}
-  }
-  const COLORS = darkMode ? DARK_COLORS : (LIGHT_THEMES[themeName] || LIGHT_COLORS);
+  const COLORS = darkMode ? DARK_COLORS : LIGHT_COLORS;
   const RANK_COLORS = [COLORS.yellow, COLORS.coral, COLORS.mint];
   const TYPE_COLOR = { 수업: COLORS.mint, 알바: COLORS.coral, 동아리: COLORS.yellow, 기타: COLORS.muted };
 
@@ -561,9 +544,8 @@ export default function TodayGapPlanner() {
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [taskSearch, setTaskSearch] = useState("");
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [todayTaskDraft, setTodayTaskDraft] = useState("");
   const [activeTab, setActiveTab] = useState("home");
-  const [onboardDismissed, setOnboardDismissed] = useState(() => { try { return localStorage.getItem("damda-onboard-v1") === "1"; } catch { return true; } });
-  function dismissOnboard() { try { localStorage.setItem("damda-onboard-v1", "1"); } catch {} setOnboardDismissed(true); }
   const [statsRange, setStatsRange] = useState(7);
   const [energyLevel, setEnergyLevel] = useState("보통");
   const [newTask, setNewTask] = useState({ name: "", due: "", start: todayKey(), estMin: "", noDue: false, estUnknown: false });
@@ -573,7 +555,6 @@ export default function TodayGapPlanner() {
   const [meals, setMeals] = useState(null);
   const [jobs, setJobs] = useState(null);
   const [jobsErr, setJobsErr] = useState(false);
-  const [jobsSort, setJobsSort] = useState("마감순");
   const [jobsHide, setJobsHide] = useState(() => {
     try { return JSON.parse(localStorage.getItem(JOBS_HIDE_KEY) || "[]"); } catch (e) { return []; }
   });
@@ -582,15 +563,11 @@ export default function TodayGapPlanner() {
   const [ttLoading, setTtLoading] = useState(false);
   const [ttError, setTtError] = useState("");
   const [ttFound, setTtFound] = useState(null);   // OCR 결과 확인 목록
+  const [ttEngine, setTtEngine] = useState("");     // "ai" | "ocr" — 어떤 방법으로 읽었는지
+  const [ttRaw, setTtRaw] = useState("");           // 무료 OCR이 읽은 원문 (직접 고칠 때 참고)
+  const [ttProgress, setTtProgress] = useState(""); // 무료 OCR 진행 문구
   const ttInputRef = useRef(null);
   const [openBook, setOpenBook] = useState(null);
-  const [shelfSearch, setShelfSearch] = useState("");
-  const [shelfFilter, setShelfFilter] = useState("all");
-  const [entrySearch, setEntrySearch] = useState("");
-  const [shelfSuggestHide, setShelfSuggestHide] = useState(() => {
-    try { return localStorage.getItem("teum-shelf-suggest-hide-v1") === "1"; } catch { return false; }
-  });
-  const [dragSplit, setDragSplit] = useState(null); // { taskId, fromIdx }
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfPages, setPdfPages] = useState(null);
   const [pdfFrom, setPdfFrom] = useState("1");
@@ -598,15 +575,21 @@ export default function TodayGapPlanner() {
   const [sumMode, setSumMode] = useState("핵심 요약");
   const [sumLoading, setSumLoading] = useState(false);
   const [sumError, setSumError] = useState("");
+  const [transcriptText, setTranscriptText] = useState("");
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [transcriptError, setTranscriptError] = useState("");
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [prepDraft, setPrepDraft] = useState("");
   const [prepEditing, setPrepEditing] = useState(false);
   const [recording, setRecording] = useState(null);
-  const [trBusyId, setTrBusyId] = useState(null);
   const recRef = useRef(null);
   const fileInputRef = useRef(null);
   const saveQueueRef = useRef(Promise.resolve());
+  // Supabase 로그인 토큰은 약 1시간 뒤 만료돼요. 앱을 오래 켜둬도 저장이 끊기지 않도록 최신 토큰을 여기서 관리합니다.
+  const authRef = useRef(null);
+  const refreshPromiseRef = useRef(null);
+  useEffect(() => { authRef.current = auth || null; }, [auth]);
 
   useEffect(() => {
     const upcoming = nextUpcomingClass(data?.classes || []);
@@ -653,28 +636,26 @@ export default function TodayGapPlanner() {
     alert("할 일에 담았어요");
   }
 
-  async function readTimetableImage(file) {
-    if (!file) return;
-    setTtError(""); setTtLoading(true); setTtFound(null);
-    try {
-      const dataUrl = await new Promise((res, rej) => {
-        const img = new Image();
-        const fr = new FileReader();
-        fr.onload = () => { img.src = fr.result; };
-        fr.onerror = rej;
-        img.onload = () => {
-          const max = 1500;
-          const sc = Math.min(1, max / Math.max(img.width, img.height));
-          const c = document.createElement("canvas");
-          c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
-          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-          res(c.toDataURL("image/jpeg", 0.85));
-        };
-        img.onerror = rej;
-        fr.readAsDataURL(file);
-      });
-      const b64 = dataUrl.split(",")[1];
-      const prompt = `이 이미지는 대학 시간표야. 수업만 JSON 배열로 뽑아줘.
+  // 1) 서버 AI(/api/vision) — 키가 있으면 이쪽이 더 정확해요.
+  async function readTimetableWithServer(file) {
+    const dataUrl = await new Promise((res, rej) => {
+      const img = new Image();
+      const fr = new FileReader();
+      fr.onload = () => { img.src = fr.result; };
+      fr.onerror = rej;
+      img.onload = () => {
+        const max = 1500;
+        const sc = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = rej;
+      fr.readAsDataURL(file);
+    });
+    const b64 = dataUrl.split(",")[1];
+    const prompt = `이 이미지는 대학 시간표야. 수업만 JSON 배열로 뽑아줘.
 형식: [{"name":"과목명","day":"월","start":"09:00","end":"10:15","room":"강의실"}]
 규칙:
 - day는 월 화 수 목 금 토 일 중 한 글자
@@ -683,42 +664,92 @@ export default function TodayGapPlanner() {
 - 교시만 있으면 1교시 09:00~09:50, 이후 매 교시 60분 간격으로 환산
 - 강의실 없으면 room은 빈 문자열
 - JSON 배열만 출력. 설명·코드블록 금지.`;
-      const r = await fetch(VISION_API_URL, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: b64, mediaType: "image/jpeg", prompt }),
-      });
-      const rd = await r.json();
-      if (!r.ok) throw new Error(rd.error || "시간표를 읽지 못했어요.");
-      const text = (rd.content || []).map((b) => b.text || "").join("");
-      const m = text.match(/\[[\s\S]*\]/);
-      if (!m) throw new Error("시간표 표를 찾지 못했어요. 표가 잘 보이게 다시 찍어 주세요.");
-      const arr = JSON.parse(m[0]).filter(
-        (x) => x && x.name && /^[월화수목금토일]$/.test(x.day) && /^\d{1,2}:\d{2}$/.test(x.start) && /^\d{1,2}:\d{2}$/.test(x.end)
-      );
-      if (!arr.length) throw new Error("읽어낸 수업이 없어요.");
-      setTtFound(arr.map((x, i) => ({ ...x, _id: i, use: true })));
+    const r = await fetch(VISION_API_URL, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageBase64: b64, mediaType: "image/jpeg", prompt }),
+    });
+    const rd = await readApiJson(r);
+    if (!r.ok) throw new Error(rd.error || "시간표를 읽지 못했어요.");
+    const text = aiTextOf(rd);
+    const m = text.match(/\[[\s\S]*\]/);
+    if (!m) throw new Error("시간표 표를 찾지 못했어요. 표가 잘 보이게 다시 찍어 주세요.");
+    let parsedRows;
+    try { parsedRows = JSON.parse(m[0]); } catch (e) { throw new Error("시간표 결과를 해석하지 못했어요. 한 번 더 올려 주세요."); }
+    const arr = (Array.isArray(parsedRows) ? parsedRows : [])
+      .map((x) => (x && typeof x === "object" ? { ...x, name: String(x.name || "").trim(), room: String(x.room || "").trim(), start: normTime(x.start), end: normTime(x.end) } : null))
+      .filter((x) => x && x.name && /^[월화수목금토일]$/.test(x.day) && x.start && x.end && timeToMin(x.end) > timeToMin(x.start));
+    if (!arr.length) throw new Error("읽어낸 수업이 없어요.");
+    return arr;
+  }
+  async function readTimetableImage(file) {
+    if (!file) return;
+    setTtError(""); setTtLoading(true); setTtFound(null); setTtEngine(""); setTtRaw(""); setTtProgress("");
+    try {
+      try {
+        const arr = await readTimetableWithServer(file);
+        setTtEngine("ai");
+        setTtFound(arr.map((x, i) => ({ ...x, _id: i, use: true })));
+        return;
+      } catch (serverError) {
+        // 2) API 키가 없거나(ANTHROPIC/GEMINI 미설정), 서버가 없거나(404), 한도 초과·해석 실패면 무료 OCR로 넘어갑니다.
+        setTtProgress("AI 서버를 쓸 수 없어 무료 OCR로 읽어요…");
+      }
+      const { readTimetableLocally } = await import("./timetableOcr.js");
+      const result = await readTimetableLocally(file, (msg) => setTtProgress(msg));
+      setTtEngine("ocr");
+      setTtRaw(result.text || "");
+      const rows = (result.rows || []).map((x, i) => ({
+        name: x.name || "", day: /^[월화수목금토일]$/.test(x.day) ? x.day : "월",
+        start: normTime(x.start) || "", end: normTime(x.end) || "", room: x.room || "", _id: i, use: true,
+      }));
+      if (rows.length) {
+        setTtFound(rows);
+      } else {
+        setTtFound([{ ...blankTtRow(), _id: 0 }]);
+        setTtError("사진에서 수업을 자동으로 못 찾았어요. 아래 칸에 직접 적거나 '읽은 글자'를 참고해 고쳐 주세요.");
+      }
     } catch (e) {
-      setTtError(e?.message || "시간표를 읽지 못했어요.");
+      setTtError(e?.message ? `무료 OCR도 실패했어요: ${e.message}` : "시간표를 읽지 못했어요. 아래 수동 등록을 이용해 주세요.");
     } finally {
       setTtLoading(false);
+      setTtProgress("");
     }
   }
+  function blankTtRow() {
+    return { name: "", day: "월", start: "09:00", end: "10:15", room: "", use: true };
+  }
+  function updateTtRow(id, patch) {
+    setTtFound((prev) => (prev || []).map((y) => (y._id === id ? { ...y, ...patch } : y)));
+  }
+  function addTtRow() {
+    setTtFound((prev) => [...(prev || []), { ...blankTtRow(), _id: Date.now() }]);
+  }
   function saveTimetable() {
-    const picked = (ttFound || []).filter((x) => x.use);
+    const picked = (ttFound || []).filter((x) => x.use)
+      .map((x) => ({ ...x, name: String(x.name || "").trim(), room: String(x.room || "").trim(), start: normTime(x.start), end: normTime(x.end) }));
     if (!picked.length) return;
-    updateData((prev) => ({
-      ...prev,
-      classes: [
-        ...prev.classes,
-        ...picked.map((x, i) => ({
+    const bad = picked.findIndex((x) => !x.name || !/^[월화수목금토일]$/.test(x.day) || !x.start || !x.end || timeToMin(x.end) <= timeToMin(x.start));
+    if (bad >= 0) { setTtError(`${bad + 1}번째 수업의 과목명·요일·시간을 확인해 주세요. (끝나는 시간이 시작보다 늦어야 해요)`); return; }
+    setTtError("");
+    updateData((prev) => {
+      // 같은 시간표를 두 번 올려도 수업이 중복 등록되지 않게 합니다.
+      const sameKey = (c) => `${c.name}|${c.day}|${c.start}|${c.end}`;
+      const existing = new Set((prev.classes || []).map(sameKey));
+      const added = [];
+      picked.forEach((x, i) => {
+        const c = {
           id: `c${Date.now()}${i}`,
           name: x.room ? `${x.name} (${x.room})` : x.name,
           day: x.day, start: x.start, end: x.end,
           type: "수업", dayMode: "weekday",
-        })),
-      ],
-    }));
-    setTtFound(null);
+        };
+        if (existing.has(sameKey(c))) return;
+        existing.add(sameKey(c));
+        added.push(c);
+      });
+      return { ...prev, classes: [...prev.classes, ...added] };
+    });
+    setTtFound(null); setTtEngine(""); setTtRaw("");
   }
 
   /* ===== 과제 자동 분할 ===== */
@@ -761,34 +792,6 @@ export default function TodayGapPlanner() {
       return { ...prev, splits: sp };
     });
   }
-  function reorderSplitSlots(taskId, fromIdx, toIdx) {
-    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
-    updateData((prev) => {
-      const sp = prev.splits?.[taskId];
-      if (!sp?.slots) return prev;
-      if (toIdx >= sp.slots.length) return prev;
-      const slots = [...sp.slots];
-      const [item] = slots.splice(fromIdx, 1);
-      slots.splice(toIdx, 0, item);
-      return { ...prev, splits: { ...prev.splits, [taskId]: { ...sp, slots } } };
-    });
-  }
-  function moveSplitSlot(taskId, fromIdx, dir) {
-    reorderSplitSlots(taskId, fromIdx, fromIdx + dir);
-  }
-  function removeSplitSlot(taskId, idx) {
-    updateData((prev) => {
-      const sp = prev.splits?.[taskId];
-      if (!sp?.slots) return prev;
-      const slots = sp.slots.filter((_, i) => i !== idx);
-      if (!slots.length) {
-        const next = { ...(prev.splits || {}) };
-        delete next[taskId];
-        return { ...prev, splits: next };
-      }
-      return { ...prev, splits: { ...prev.splits, [taskId]: { ...sp, slots } } };
-    });
-  }
 
   function updateShelf(fn) {
     setShelf((prev) => {
@@ -798,7 +801,7 @@ export default function TodayGapPlanner() {
     });
   }
   function getBook(name) {
-    return shelf[name] || { entries: [], color: null, tags: [] };
+    return shelf[name] || { entries: [], color: null };
   }
   function addEntry(subject, patch) {
     updateShelf((prev) => {
@@ -845,11 +848,9 @@ export default function TodayGapPlanner() {
       const prompt = `너는 대학 수업자료 정리 도우미야. ${SUMMARY_MODES[sumMode]}\n\n과목: ${subject}\n파일: ${pdfFile.name}\n범위: ${ex.start}~${ex.end}페이지\n\n원문:\n${ex.text.slice(0, 80000)}\n\n한국어로만 답하고 원문에 없는 사실은 만들지 마.`;
       const url = SUMMARY_API_URL;
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
-      const rd = await res.json();
+      const rd = await readApiJson(res);
       if (!res.ok) throw new Error(rd.error || "정리를 만들지 못했어요.");
-      const text = typeof rd.text === "string" ? rd.text
-        : typeof rd.content === "string" ? rd.content
-        : (rd.content || []).map((b2) => b2.text || "").join("\n");
+      const text = aiTextOf(rd);
       if (!text.trim()) throw new Error("결과가 비어 있어요.");
       addEntry(subject, {
         memo: `[${sumMode} · ${pdfFile.name} ${ex.start}~${ex.end}p]\n` + text.trim(),
@@ -861,13 +862,66 @@ export default function TodayGapPlanner() {
       setSumError(e?.message || "정리하지 못했어요.");
     } finally { setSumLoading(false); }
   }
+  async function transcriptToNotes(subject) {
+    const source = transcriptText.trim();
+    if (source.length < 50) {
+      setTranscriptError("한글 전사문을 50자 이상 붙여넣어 주세요.");
+      return;
+    }
+    setTranscriptLoading(true); setTranscriptError("");
+    try {
+      const prompt = `너는 대학 강의 필기 정리 도우미야.
+아래 내용은 녹음 파일을 한글로 전사한 원문이야. 원문에 없는 사실은 절대 만들지 말고, 교수님의 설명 흐름과 예시를 보존해 읽기 좋은 필기본으로 바꿔줘.
+
+반드시 다음 순서로 작성해:
+1. 오늘 수업 한눈에 보기: 핵심 주제 3~7개
+2. 개념별 필기: 소제목, 정의·원리, 세부 설명
+3. 교수님이 든 예시와 비교
+4. 반복하거나 강조한 내용
+5. 시험·과제 관련 언급: 실제로 말한 내용만, 없으면 '확인된 언급 없음'
+6. 헷갈리기 쉬운 부분과 복습 질문 5개
+
+말버릇과 의미 없는 반복만 제거하고, 중요한 설명을 지나치게 축약하지 마. 한국어로만 답해.
+
+과목: ${subject}
+
+한글 전사문:
+${source.slice(0, 100000)}`;
+      const res = await fetch(SUMMARY_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const rd = await readApiJson(res);
+      if (!res.ok) throw new Error(rd.error || "필기본을 만들지 못했어요.");
+      const text = aiTextOf(rd);
+      if (!text.trim()) throw new Error("필기본 결과가 비어 있어요.");
+      const sourceFile = {
+        id: `tr${Date.now()}`,
+        name: `${subject}_녹음전사문.txt`,
+        size: new Blob([source]).size,
+        type: "text/plain",
+        url: `data:text/plain;charset=utf-8,${encodeURIComponent(source)}`,
+      };
+      addEntry(subject, {
+        memo: `[녹음 전사문 → AI 필기본]\n${text.trim()}`,
+        understand: "review",
+        files: [sourceFile],
+        source: { kind: "녹음 전사문", name: `${source.length.toLocaleString()}자`, mode: "가독성 좋은 필기본" },
+      });
+      setTranscriptText("");
+    } catch (e) {
+      setTranscriptError(e?.message || "필기본을 만들지 못했어요.");
+    } finally {
+      setTranscriptLoading(false);
+    }
+  }
   async function analyzeProfessorStyle(subject) {
     const book = getBook(subject);
-    const allFiles = (book.entries || []).flatMap((entry) => entry.files || []);
-    const pdfs = allFiles.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
-    const transcripts = allFiles.filter((file) => file.type === "transcript" && file.text);
-    if (!pdfs.length && !transcripts.length) {
-      setAnalysisError("먼저 회차의 ‘자료 추가’로 강의계획서·PPT·대본·족보 PDF를 넣거나 수업을 녹음해 주세요.");
+    const pdfs = (book.entries || []).flatMap((entry) => entry.files || [])
+      .filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
+    if (!pdfs.length) {
+      setAnalysisError("먼저 회차의 ‘자료 추가’로 강의계획서·PPT·대본·족보 PDF를 넣어 주세요.");
       return;
     }
     setAnalysisLoading(true); setAnalysisError("");
@@ -880,9 +934,6 @@ export default function TodayGapPlanner() {
         const end = Math.min(first.pageCount, 20);
         const extracted = end > 1 ? await extractPdfPages(file, 1, end) : first;
         parts.push(`[자료: ${record.name} · 1~${extracted.end}페이지]\n${extracted.text}`);
-      }
-      for (const t of transcripts.slice(0, 4)) {
-        parts.push(`[자료: ${t.name} · 녹음 대본]\n${(t.text || "").slice(0, 20000)}`);
       }
       const sourceText = parts.join("\n\n====================\n\n").slice(0, 90000);
       if (sourceText.replace(/\[자료:[^\n]+\]/g, "").trim().length < 50)
@@ -908,41 +959,18 @@ export default function TodayGapPlanner() {
 ${sourceText}`;
       const url = SUMMARY_API_URL;
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
-      const rd = await res.json();
+      const rd = await readApiJson(res);
       if (!res.ok) throw new Error(rd.error || "출제 스타일을 분석하지 못했어요.");
-      const text = typeof rd.text === "string" ? rd.text
-        : typeof rd.content === "string" ? rd.content
-        : (rd.content || []).map((b2) => b2.text || "").join("\n");
+      const text = aiTextOf(rd);
       if (!text.trim()) throw new Error("분석 결과가 비어 있어요.");
       addEntry(subject, {
-        memo: `[교수님 출제 스타일 분석 · ${pdfs.length + transcripts.length}개 자료]\n` + text.trim(),
+        memo: `[교수님 출제 스타일 분석 · ${pdfs.length}개 PDF]\n` + text.trim(),
         understand: "review",
-        source: { kind: "AI 분석", name: [...pdfs.slice(0, 8), ...transcripts.slice(0, 4)].map((f) => f.name).join(", "), mode: "강의계획서·PPT·대본·족보 비교" },
+        source: { kind: "AI 분석", name: pdfs.slice(0, 8).map((f) => f.name).join(", "), mode: "강의계획서·PPT·대본·족보 비교" },
       });
     } catch (e) {
       setAnalysisError(e?.message || "출제 스타일을 분석하지 못했어요.");
     } finally { setAnalysisLoading(false); }
-  }
-  async function summarizeTranscript(subject, record) {
-    if (!record?.text) return;
-    setTrBusyId(record.id); setSumError("");
-    try {
-      const prompt = `너는 대학 수업자료 정리 도우미야. ${SUMMARY_MODES["대본 3종 정리"]}\n\n과목: ${subject}\n자료: ${record.name}\n\n원문:\n${record.text.slice(0, 80000)}\n\n한국어로만 답하고 원문에 없는 사실은 만들지 마.`;
-      const res = await fetch(SUMMARY_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) });
-      const rd = await res.json();
-      if (!res.ok) throw new Error(rd.error || "필기본을 만들지 못했어요.");
-      const text = typeof rd.text === "string" ? rd.text
-        : typeof rd.content === "string" ? rd.content
-        : (rd.content || []).map((b2) => b2.text || "").join("\n");
-      if (!text.trim()) throw new Error("결과가 비어 있어요.");
-      addEntry(subject, {
-        memo: `[대본 3종 정리 · ${record.name}]\n` + text.trim(),
-        understand: "review",
-        source: { kind: "녹음 대본", name: record.name, mode: "대본 3종 정리" },
-      });
-    } catch (e) {
-      setSumError(e?.message || "필기본을 만들지 못했어요.");
-    } finally { setTrBusyId(null); }
   }
 
   async function attachFiles(subject, entryId, fileList) {
@@ -974,35 +1002,18 @@ ${sourceText}`;
       const mr = new MediaRecorder(stream);
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-      // 라이브 텍스트 변환 — 지원 브라우저(크롬 최적)에서 녹음과 동시에 대본을 만들어요
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const finals = [];
-      let rc = null;
-      if (SR) {
-        try {
-          rc = new SR();
-          rc.lang = "ko-KR"; rc.continuous = true; rc.interimResults = false;
-          rc.onresult = (ev) => { for (let i = ev.resultIndex; i < ev.results.length; i++) { if (ev.results[i].isFinal) finals.push(ev.results[i][0].transcript.trim()); } };
-          rc.onend = () => { if (recRef.current === mr) { try { rc.start(); } catch {} } };
-          rc.start();
-        } catch { rc = null; }
-      }
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        if (rc) { try { rc.onend = null; rc.stop(); } catch {} }
         const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
         const url = await new Promise((res) => {
           const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob);
         });
         const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
-        const stamp = Date.now();
-        const rec = { id: `r${stamp}`, name: `녹음 ${mins}분`, size: blob.size, type: "audio", url };
-        const spoken = finals.join(" ").replace(/\s+/g, " ").trim();
-        const tr = spoken.length >= 20 ? { id: `t${stamp}`, name: `녹음 대본 ${mins}분`, size: spoken.length, type: "transcript", text: spoken } : null;
+        const rec = { id: `r${Date.now()}`, name: `녹음 ${mins}분`, size: blob.size, type: "audio", url };
         updateShelf((prev) => {
           const book = prev[subject]; if (!book) return prev;
           return { ...prev, [subject]: { ...book,
-            entries: book.entries.map((en) => (en.id === entryId ? { ...en, files: [...(en.files || []), rec, ...(tr ? [tr] : [])] } : en)) } };
+            entries: book.entries.map((en) => (en.id === entryId ? { ...en, files: [...(en.files || []), rec] } : en)) } };
         });
         setRecording(null); recRef.current = null;
       };
@@ -1015,11 +1026,50 @@ ${sourceText}`;
   }
   const importInputRef = useRef(null);
 
+  async function refreshSession() {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    const current = authRef.current;
+    if (!current?.refreshToken) throw new Error("로그인이 만료됐어요. 다시 로그인해 주세요.");
+    refreshPromiseRef.current = (async () => {
+      const refreshed = await supabaseRefresh(current.refreshToken);
+      const next = {
+        ...current,
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token || current.refreshToken,
+        tokenAt: Date.now(),
+      };
+      authRef.current = next;
+      try { localStorage.setItem(SB_REFRESH_KEY, next.refreshToken); } catch (e) {}
+      setAuth(next);
+      return next;
+    })();
+    try { return await refreshPromiseRef.current; }
+    finally { refreshPromiseRef.current = null; }
+  }
+  async function withFreshAuth(fn) {
+    const current = authRef.current || auth;
+    if (!current) throw new Error("로그인이 필요해요.");
+    try { return await fn(current); }
+    catch (e) {
+      if (e?.status !== 401) throw e;
+      const next = await refreshSession();
+      return fn(next);
+    }
+  }
+
   async function loadOrInitRow(authObj) {
     setDataLoading(true);
     setError(null);
     try {
-      const row = await fetchUserRow(authObj.accessToken, authObj.userId);
+      let row;
+      try {
+        row = await fetchUserRow(authObj.accessToken, authObj.userId);
+      } catch (e) {
+        if (e?.status !== 401 || !authObj.refreshToken) throw e;
+        authRef.current = authObj;
+        authObj = await refreshSession();
+        row = await fetchUserRow(authObj.accessToken, authObj.userId);
+      }
       if (row) {
         setData({
           classes: row.classes || [],
@@ -1060,8 +1110,9 @@ ${sourceText}`;
           if (accessToken && refreshToken) {
             try {
               const user = await fetchSupabaseUser(accessToken);
-              const newAuth = { accessToken, refreshToken, userId: user.id, username: (user.email || "").split("@")[0] };
+              const newAuth = { accessToken, refreshToken, userId: user.id, username: (user.email || "").split("@")[0], tokenAt: Date.now() };
               window.history.replaceState(null, "", window.location.pathname);
+              authRef.current = newAuth;
               setAuth(newAuth);
               try { localStorage.setItem(SB_REFRESH_KEY, refreshToken); } catch (e) {}
               await loadOrInitRow(newAuth);
@@ -1078,7 +1129,9 @@ ${sourceText}`;
               refreshToken: refreshed.refresh_token,
               userId: refreshed.user.id,
               username: (refreshed.user.email || "").split("@")[0],
+              tokenAt: Date.now(),
             };
+            authRef.current = newAuth;
             setAuth(newAuth);
             try { localStorage.setItem(SB_REFRESH_KEY, refreshed.refresh_token); } catch (e) {}
             await loadOrInitRow(newAuth);
@@ -1105,6 +1158,20 @@ ${sourceText}`;
     } catch (e) {}
   }, [data, notifPermission]);
 
+  useEffect(() => {
+    if (!auth?.userId) return undefined;
+    const REFRESH_AFTER_MS = 45 * 60 * 1000;
+    const check = () => {
+      const a = authRef.current;
+      if (!a?.refreshToken) return;
+      if (Date.now() - (a.tokenAt || 0) > REFRESH_AFTER_MS) refreshSession().catch(() => {});
+    };
+    const timer = setInterval(check, 5 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [auth?.userId]);
+
   function updateData(updater) {
     setData((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -1114,29 +1181,20 @@ ${sourceText}`;
   }
   function persist(next) {
     // 빠르게 여러 번 수정해도 이전 저장 응답이 최신 데이터를 덮지 않도록 순서대로 저장합니다.
-    saveLocalExtras(auth.userId, next);
+    const current = authRef.current || auth;
+    if (!current || !next) return Promise.resolve();
+    saveLocalExtras(current.userId, next);
     const snapshot = supabasePayload(next);
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
-      .then(async () => {
-        try {
-          await upsertUserRow(auth.accessToken, auth.userId, snapshot);
-        } catch (e) {
-          // 토큰이 만료돼 저장에 실패하면 세션을 갱신하고 한 번 더 저장합니다.
-          let stored = null;
-          try { stored = localStorage.getItem(SB_REFRESH_KEY); } catch (e2) {}
-          const refreshed = await supabaseRefresh(stored || auth.refreshToken);
-          try { localStorage.setItem(SB_REFRESH_KEY, refreshed.refresh_token); } catch (e2) {}
-          setAuth((prev) => (prev ? { ...prev, accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token } : prev));
-          await upsertUserRow(refreshed.access_token, auth.userId, snapshot);
-        }
-      })
+      .then(() => withFreshAuth((a) => upsertUserRow(a.accessToken, a.userId, snapshot)))
       .then(() => setSaveWarning(false))
       .catch(() => setSaveWarning(true));
     return saveQueueRef.current;
   }
 
   async function logout() {
+    authRef.current = null;
     setAuth(null);
     setData(null);
     try { localStorage.removeItem(SB_REFRESH_KEY); } catch (e) {}
@@ -1175,111 +1233,19 @@ ${sourceText}`;
   }
 
   const today = todayKey();
+  const todayTasks = data
+    ? data.tasks
+        .filter((t) => t.due === today && !data.completed[t.id] && data.postponed[t.id] !== today)
+        .sort((a, b) => (a.estMin || 30) - (b.estMin || 30))
+    : [];
   const activeTasks = data
     ? data.tasks.filter((t) => {
         if (t.due && data.completed[t.id]) return false;
         if (data.postponed[t.id] === today) return false;
-        if (t.start && t.start > today) return false;
         return true;
       })
     : [];
   const todayGaps = data ? computeGapsForDay(data.classes, todayDayName(), today) : [];
-  const shelfBookNames = Object.keys(shelf || {});
-  function addCustomBook(presetName) {
-    const nm = typeof presetName === "string" && presetName
-      ? presetName
-      : window.prompt("추가할 책 이름 (과목·주제 자유롭게)", "");
-    const v = (nm || "").trim();
-    if (!v) return;
-    if (shelf[v]) { alert("이미 같은 이름의 책이 있어요"); setOpenBook(v); return; }
-    const color = BOOK_COLORS[Object.keys(shelf || {}).length % BOOK_COLORS.length];
-    updateShelf((prev) => ({ ...prev, [v]: { entries: [], color, tags: [] } }));
-    setOpenBook(v);
-  }
-  function renameBook(oldName) {
-    const nm = window.prompt("새 이름", oldName);
-    const v = (nm || "").trim();
-    if (!v || v === oldName) return;
-    if (shelf[v]) { alert("이미 같은 이름의 책이 있어요"); return; }
-    updateShelf((prev) => {
-      const next = { ...prev };
-      next[v] = { ...(next[oldName] || { entries: [] }) };
-      delete next[oldName];
-      return next;
-    });
-    setOpenBook(v);
-  }
-  function removeBook(name) {
-    if (!window.confirm(`"${name}" 책을 삭제할까요? 안의 기록·자료도 함께 지워져요.`)) return;
-    updateShelf((prev) => {
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
-    setOpenBook(null);
-  }
-  function setBookColor(name, color) {
-    updateShelf((prev) => {
-      const book = prev[name] || { entries: [] };
-      return { ...prev, [name]: { ...book, color } };
-    });
-  }
-  function toggleBookTag(name, tag) {
-    updateShelf((prev) => {
-      const book = prev[name] || { entries: [], tags: [] };
-      const tags = book.tags || [];
-      const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-      return { ...prev, [name]: { ...book, tags: next } };
-    });
-  }
-  function dismissShelfSuggest() {
-    setShelfSuggestHide(true);
-    try { localStorage.setItem("teum-shelf-suggest-hide-v1", "1"); } catch {}
-  }
-  const classSubjects = data ? subjectsFromClasses(data.classes) : [];
-  const suggestedBooks = classSubjects.filter((s) => !shelfBookNames.includes(s));
-  const reviewQueue = shelfBookNames.flatMap((name) => {
-    const book = getBook(name);
-    return (book.entries || [])
-      .filter((e) => e.understand === "review" || e.understand === "no")
-      .map((e) => ({ ...e, bookName: name }));
-  });
-  const starredExamEntries = shelfBookNames.flatMap((name) => {
-    const book = getBook(name);
-    return (book.entries || []).filter((e) => e.star).map((e) => ({ ...e, bookName: name }));
-  });
-  const examBoardTasks = (data?.tasks || [])
-    .filter((t) => t.due && !(data.completed || {})[t.id])
-    .map((t) => ({ ...t, d: daysUntil(t.due) }))
-    .filter((t) => t.d <= 14)
-    .sort((a, b) => a.d - b.d);
-  const weekReview = (() => {
-    const log = data?.completionLog || {};
-    let done = 0;
-    for (let i = 0; i < 7; i += 1) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      done += log[toKey(d)] || 0;
-    }
-    const postponedToday = Object.values(data?.postponed || {}).filter((v) => v === today).length;
-    const dueThisWeek = (data?.tasks || []).filter((t) => {
-      if (!t.due || (data.completed || {})[t.id]) return false;
-      const d = daysUntil(t.due);
-      return d >= 0 && d <= 7;
-    }).length;
-    return { done, reviewNeed: reviewQueue.length, postponedToday, dueThisWeek, starred: starredExamEntries.length };
-  })();
-  const filteredShelfNames = shelfBookNames.filter((name) => {
-    const q = shelfSearch.trim().toLowerCase();
-    const book = getBook(name);
-    if (shelfFilter === "review") {
-      const need = (book.entries || []).some((e) => e.understand === "review" || e.understand === "no");
-      if (!need) return false;
-    }
-    if (!q) return true;
-    if (name.toLowerCase().includes(q)) return true;
-    if ((book.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
-    return (book.entries || []).some((e) => (e.memo || "").toLowerCase().includes(q));
-  });
   const nextClassInfo = data ? nextUpcomingClass(data.classes) : null;
   const nextClassPrep = nextClassInfo ? (data.prepByClass?.[nextClassInfo.classItem.name] || "") : "";
   const tomorrowDateObj = new Date();
@@ -1345,21 +1311,23 @@ ${slotList || "(없음)"}
 
       const planApiUrl = PLAN_API_URL;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
       let response;
       try {
         response = await fetch(planApiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, json: true }),
           signal: controller.signal,
         });
       } finally { clearTimeout(timeoutId); }
-      const resData = await response.json();
+      const resData = await readApiJson(response);
       if (!response.ok) throw new Error(resData.error || "계획을 만들지 못했어요.");
-      const text = (resData.content || []).map((b) => b.text || "").join("\n");
+      // Gemini 서버는 { text } 로 답합니다. (예전 { content: [...] } 형식도 함께 지원)
+      const text = aiTextOf(resData);
       const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
+      const objectMatch = clean.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(objectMatch ? objectMatch[0] : clean);
       if (!parsed || !Array.isArray(parsed.top3) || parsed.top3.some((x) => !x || typeof x.task !== "string")) throw new Error("AI 응답 형식이 올바르지 않아요.");
       parsed.top3 = parsed.top3.slice(0, 3);
       updateData((prev) => ({ ...prev, plan: parsed, planHistory: [{ ...parsed, createdAt: new Date().toISOString() }, ...(prev.planHistory || [])].slice(0, 20) }));
@@ -1392,9 +1360,18 @@ ${slotList || "(없음)"}
     }
   }
 
-  function markComplete(taskName) {
-    const t = data.tasks.find((x) => x.name === taskName);
+  function findTaskForAction(taskName, taskId) {
+    // 이름이 같은 할 일이 여러 개여도 누른 그 항목이 체크되도록 id를 먼저 봅니다.
+    if (taskId) return data.tasks.find((x) => x.id === taskId) || null;
+    return data.tasks.find((x) => x.name === taskName && !data.completed[x.id] && data.postponed[x.id] !== todayKey())
+      || data.tasks.find((x) => x.name === taskName && !data.completed[x.id])
+      || data.tasks.find((x) => x.name === taskName)
+      || null;
+  }
+  function markComplete(taskName, taskId) {
+    const t = findTaskForAction(taskName, taskId);
     if (!t) return;
+    if (t.due && data.completed[t.id]) return;
     const newStreak = bumpStreak(data.streak);
     const alreadyCelebrated = (data.celebratedMilestones || []).includes(newStreak.count);
     const hitMilestone = MILESTONES.includes(newStreak.count) && !alreadyCelebrated;
@@ -1440,8 +1417,8 @@ ${slotList || "(없음)"}
       return { ...prev, choreHistory: history, completionLog, totalCompleted: Math.max(0, (prev.totalCompleted || 0) - 1) };
     });
   }
-  function markPostpone(taskName) {
-    const t = data.tasks.find((x) => x.name === taskName);
+  function markPostpone(taskName, taskId) {
+    const t = findTaskForAction(taskName, taskId);
     if (!t) return;
     updateData((prev) => ({ ...prev, postponed: { ...prev.postponed, [t.id]: todayKey() } }));
   }
@@ -1492,6 +1469,21 @@ ${slotList || "(없음)"}
     updateData((prev) => ({ ...prev, tasks: [...prev.tasks, t] }));
     setNewTask({ name: "", due: "", start: todayKey(), estMin: "", noDue: false, estUnknown: false });
     setShowAddTask(false);
+  }
+  function addTodayTask() {
+    const name = todayTaskDraft.trim();
+    if (!name) return;
+    updateData((prev) => ({
+      ...prev,
+      tasks: [...prev.tasks, {
+        id: `t${Date.now()}`,
+        name,
+        due: todayKey(),
+        start: todayKey(),
+        estMin: 30,
+      }],
+    }));
+    setTodayTaskDraft("");
   }
   function quickAddChore(preset) {
     const t = { id: `t${Date.now()}`, name: preset.name, due: null, estMin: preset.estMin };
@@ -1581,13 +1573,18 @@ ${slotList || "(없음)"}
       if (file.size > 420 * 1024 * 1024) throw new Error("too_large");
       const text = await file.text();
       const parsed = JSON.parse(text);
-      if (parsed?.version && Number(parsed.version) > 1) throw new Error("newer_version");
+      // 이 앱의 '백업 받기'는 version 2로 저장하므로 2까지 복원합니다.
+      if (parsed?.version && Number(parsed.version) > 2) throw new Error("newer_version");
       const incoming = parsed?.data || parsed;
+      const incomingShelf = parsed?.shelf || incoming?.shelf;
       if (!incoming || !Array.isArray(incoming.tasks) || !Array.isArray(incoming.classes)) throw new Error("invalid");
       if (!window.confirm("이 백업으로 현재 플래너 데이터를 교체할까요? 현재 데이터는 덮어써져요.")) return;
+      // Supabase 표에 없는 칸(shelf 등)이 섞이면 저장이 실패하므로 앱 데이터 칸만 가져옵니다.
+      const allowedKeys = Object.keys(defaultUserData());
+      const pickedData = Object.fromEntries(Object.entries(incoming).filter(([k]) => allowedKeys.includes(k)));
       const safe = {
         ...defaultUserData(),
-        ...incoming,
+        ...pickedData,
         tasks: Array.isArray(incoming.tasks) ? incoming.tasks : [],
         classes: Array.isArray(incoming.classes) ? incoming.classes : [],
         completed: incoming.completed && typeof incoming.completed === "object" ? incoming.completed : {},
@@ -1599,13 +1596,13 @@ ${slotList || "(없음)"}
         prepByClass: incoming.prepByClass && typeof incoming.prepByClass === "object" ? incoming.prepByClass : {},
       };
       updateData(() => safe);
-      if (incoming.shelf && typeof incoming.shelf === "object") {
-        setShelf(incoming.shelf);
-        if (auth?.userId) saveShelf(auth.userId, incoming.shelf);
-      }
       setError(null);
+      if (incomingShelf && typeof incomingShelf === "object") {
+        setShelf(incomingShelf);
+        if (auth?.userId && !saveShelf(auth.userId, incomingShelf)) setError("책장 파일이 기기 저장 용량을 넘어 일부만 복원됐을 수 있어요.");
+      }
     } catch (e) {
-      setError("백업 파일 형식이 올바르지 않아요.");
+      setError(e?.message === "newer_version" ? "더 새 버전 앱에서 만든 백업이라 복원할 수 없어요." : "백업 파일 형식이 올바르지 않아요.");
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
@@ -1614,11 +1611,13 @@ ${slotList || "(없음)"}
   async function clearMyCloudData() {
     if (!window.confirm("내 플래너 데이터를 모두 삭제할까요? 이 작업은 되돌릴 수 없어요.")) return;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?user_id=eq.${encodeURIComponent(auth.userId)}`, {
-        method: "DELETE",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${auth.accessToken}` },
+      await withFreshAuth(async (a) => {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?user_id=eq.${encodeURIComponent(a.userId)}`, {
+          method: "DELETE",
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${a.accessToken}` },
+        });
+        if (!res.ok) { const err = new Error("delete_failed"); err.status = res.status; throw err; }
       });
-      if (!res.ok) throw new Error();
       localStorage.removeItem(`${LOCAL_EXTRAS_PREFIX}${auth.userId}`);
       localStorage.removeItem(`${SHELF_PREFIX}${auth.userId}`);
       setData(defaultUserData());
@@ -1631,18 +1630,21 @@ ${slotList || "(없음)"}
     if (!window.confirm("계정과 플래너 데이터를 모두 삭제할까요? 되돌릴 수 없어요.")) return;
     if (!window.confirm("정말 탈퇴할까요? 책장 파일도 이 기기에서 삭제돼요.")) return;
     try {
-      const res = await fetch(DELETE_ACCOUNT_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: auth.userId, accessToken: auth.accessToken }),
+      await withFreshAuth(async (a) => {
+        const res = await fetch(DELETE_ACCOUNT_API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: a.userId, accessToken: a.accessToken }),
+        });
+        const result = await readApiJson(res);
+        if (!res.ok) { const err = new Error(result.error || "회원탈퇴 API가 연결되지 않았어요."); err.status = res.status; throw err; }
       });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(result.error || "회원탈퇴 API가 연결되지 않았어요.");
       localStorage.removeItem(`${LOCAL_EXTRAS_PREFIX}${auth.userId}`);
       localStorage.removeItem(`${SHELF_PREFIX}${auth.userId}`);
       localStorage.removeItem(SB_REFRESH_KEY);
       setShelf({});
       setData(null);
+      authRef.current = null;
       setAuth(null);
     } catch (e) {
       setError(e?.message || "회원탈퇴에 실패했어요. Vercel API 설정을 확인해 주세요.");
@@ -1667,16 +1669,20 @@ ${slotList || "(없음)"}
   const streakCount = data?.streak?.count || 0;
 
   return (
-    <div style={{ background: `linear-gradient(${darkMode ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.26)"} 1px, transparent 1px), linear-gradient(90deg, ${darkMode ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.26)"} 1px, transparent 1px), radial-gradient(circle at 18% 8%, ${COLORS.paper} 0 90px, transparent 91px), radial-gradient(circle at 85% 28%, ${COLORS.ruleLine} 0 75px, transparent 76px), ${COLORS.page}`, backgroundSize: "22px 22px, 22px 22px, auto, auto, auto", minHeight: "100vh", padding: "24px 12px", position: "relative", overflow: "hidden" }}>
+    <div style={{ background: `linear-gradient(rgba(255,255,255,.26) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.26) 1px, transparent 1px), radial-gradient(circle at 18% 8%, #FFF9F5 0 90px, transparent 91px), radial-gradient(circle at 85% 28%, #F2D8D5 0 75px, transparent 76px), ${COLORS.page}`, backgroundSize: "22px 22px, 22px 22px, auto, auto, auto", minHeight: "100vh", padding: "24px 12px", position: "relative", overflow: "hidden" }}>
       
       <TinyFlower style={{ left: "max(28px, calc(50% - 245px))", top: 155 }} />
       <TinyFlower style={{ right: "max(24px, calc(50% - 250px))", top: 105, fontSize: 22, opacity: .65 }} />
       
       
       <style>{GLOBAL_STYLE}</style>
-      <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: darkMode ? "rgba(27,30,37,.85)" : "rgba(255,253,252,.76)", border: darkMode ? "1px solid rgba(255,255,255,.08)" : "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(0,0,0,.45)", backdropFilter: "blur(12px)" }}>
+      <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: "rgba(255,253,252,.76)", border: "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(102,71,68,.42)", backdropFilter: "blur(12px)" }}>
         <div className="gingham" style={{ backgroundColor: COLORS.paper, borderRadius: 31, overflow: "hidden", position: "relative", minHeight: 760, display: "flex", flexDirection: "column", fontFamily: "'Gowun Dodum', 'IBM Plex Sans KR', sans-serif", color: COLORS.ink, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.75)" }}>
-          <div style={{ height: 12 }} />
+          <div style={{ position: "absolute", top: 9, left: "50%", transform: "translateX(-50%)", width: 76, height: 20, background: "#5C4A48", borderRadius: 14, zIndex: 20, opacity: .92 }} />
+          <div className="flex items-center justify-between px-6 pt-3.5 pb-1">
+            <span className="text-xs font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{nowHHMM()}</span>
+            <StatusIcons colors={COLORS} />
+          </div>
 
           {!auth ? (
             <div className="flex-1 flex flex-col items-center justify-center px-8 text-center" style={{ animation: "fadeIn 0.4s ease both" }}>
@@ -1704,42 +1710,25 @@ ${slotList || "(없음)"}
             </div>
           ) : (
           <div className="px-4 pb-3 flex-1 overflow-y-auto">
-          {data && (data.classes || []).length === 0 && !onboardDismissed && (
-            <div style={{position:"fixed",inset:0,zIndex:70,background:"rgba(61,48,44,.45)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-              <div className="w-full rounded-3xl p-5" style={{maxWidth:340,background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`,boxShadow:"0 20px 50px rgba(0,0,0,.18)"}}>
-                <div className="text-lg font-bold mb-1">담다에 온 걸 환영해요 🌷</div>
-                <div className="text-xs mb-4" style={{color:COLORS.muted}}>딱 하나만 하면 준비 끝! 시간표를 등록하면 공강을 자동으로 찾아드려요.</div>
-                <div className="rounded-2xl p-3 mb-2" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
-                  <div className="text-xs font-bold mb-0.5">1 · 시간표 등록</div>
-                  <div className="text-[11px]" style={{color:COLORS.muted}}>킹고포털 시간표 캡처를 올리면 자동으로 읽어요</div>
-                </div>
-                <div className="rounded-2xl p-3 mb-2" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
-                  <div className="text-xs font-bold mb-0.5">2 · 과제 담기</div>
-                  <div className="text-[11px]" style={{color:COLORS.muted}}>마감 있는 과제를 넣으면 마감함이 챙겨드려요</div>
-                </div>
-                <div className="rounded-2xl p-3 mb-4" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
-                  <div className="text-xs font-bold mb-0.5">3 · 틈 자동 매칭</div>
-                  <div className="text-[11px]" style={{color:COLORS.muted}}>공강 길이·마감·에너지에 맞는 할 일을 골라드려요</div>
-                </div>
-                <button onClick={() => { dismissOnboard(); setActiveTab("calendar"); }} className="w-full text-sm py-2.5 rounded-full mb-1.5" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
-                <button onClick={dismissOnboard} className="w-full text-xs py-2 rounded-full" style={{background:"transparent",color:COLORS.muted}}>나중에 할게요</button>
-              </div>
+          {saveWarning && (
+            <div className="flex items-center gap-2 text-xs rounded-xl px-3 py-2 mt-2 mb-2" style={{ background: "#FFE8E8", color: "#B3261E" }}>
+              <AlertCircle size={14} />
+              <span className="flex-1">저장이 안 됐어요. 인터넷 연결을 확인하고 다시 저장해 주세요.</span>
+              <button onClick={() => persist(data)} className="text-[11px] px-2.5 py-1 rounded-full font-semibold" style={{ background: "#fff", color: "#B3261E", border: "1px solid #F3C2C2" }}>다시 저장</button>
             </div>
           )}
-
           {activeTab === "home" && (
             <>
             {(() => {
               const t = todayKey();
-              const md = pickMealDay(meals, t);
-              const m = md?.m;
+              const m = meals?.days?.[t];
               const dday = (d) => Math.round((new Date(d) - new Date(t)) / 86400000);
               const soon = (jobs?.items || []).filter((j) => !jobsHide.includes(j.id) && j.due && dday(j.due) >= 0 && dday(j.due) <= 7);
               return (
                 <>
                   <div className="flex gap-2 mb-3">
-                    <div className="flex-1 rounded-2xl p-3" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,minWidth:0}}>
-                      <div className="text-[10px] mb-1" style={{color:COLORS.muted}}>{mealDayLabel(md)}</div>
+                    <div className="flex-1 rounded-2xl p-3" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                      <div className="text-[10px] mb-1" style={{color:COLORS.muted}}>오늘 봉룡학사</div>
                       {m ? (
                         <div className="text-[11px] leading-snug">
                           {m.lunch?.length ? <><b>점심</b> {m.lunch.slice(0,3).join(" · ")}<br/></> : null}
@@ -1751,7 +1740,7 @@ ${slotList || "(없음)"}
                       )}
                     </div>
                     <button onClick={() => setActiveTab("jobs")} className="flex-1 rounded-2xl p-3 text-left"
-                      style={{background:soon.length?COLORS.strawberry:COLORS.paper,color:soon.length?"#fff":COLORS.ink,border:`1px solid ${COLORS.ruleLine}`,minWidth:0,overflow:"hidden"}}>
+                      style={{background:soon.length?COLORS.strawberry:COLORS.paper,color:soon.length?"#fff":COLORS.ink,border:`1px solid ${COLORS.ruleLine}`}}>
                       <div className="text-[10px] mb-1" style={{opacity:.8}}>마감함</div>
                       {soon.length ? (
                         <>
@@ -1783,7 +1772,7 @@ ${slotList || "(없음)"}
                 <button onClick={() => setCelebrateMilestone(null)} style={{ color: "#fff" }}><X size={16} /></button>
               </div>
             )}
-            <div className="flex items-center justify-between mt-2 mb-3" style={{background: darkMode ? "rgba(255,255,255,.05)" : "rgba(255,249,245,.82)", marginLeft:-4, marginRight:-4, padding:"10px 10px 8px", borderRadius:18, border:`1px dashed ${COLORS.ruleLine}`}}>
+            <div className="flex items-center justify-between mt-2 mb-3" style={{background:"rgba(255,249,245,.82)", marginLeft:-4, marginRight:-4, padding:"10px 10px 8px", borderRadius:18, border:`1px dashed ${COLORS.ruleLine}`}}>
               <div>
                 <div className="flex items-center gap-2"><div style={{ fontSize:20,fontWeight:800,letterSpacing:"-0.02em" }}>담다</div></div>
                 <div className="text-xs" style={{ color: COLORS.muted }}>
@@ -1795,6 +1784,36 @@ ${slotList || "(없음)"}
                   <Flame size={13} /> {streakCount}일 연속
                 </div>
               )}
+            </div>
+
+            <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-sm font-bold flex items-center gap-1.5"><ListTodo size={15} /> 오늘 할 일</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: COLORS.muted }}>오늘 마감으로 적은 일을 바로 체크해요</div>
+                </div>
+                <button onClick={() => setActiveTab("tasks")} className="text-[10px] px-2.5 py-1 rounded-full" style={{ background: COLORS.paper, border: `1px solid ${COLORS.ruleLine}`, color: COLORS.muted }}>전체 보기</button>
+              </div>
+              <form onSubmit={(e) => { e.preventDefault(); addTodayTask(); }} className="flex gap-2 mb-2">
+                <input
+                  value={todayTaskDraft}
+                  onChange={(e) => setTodayTaskDraft(e.target.value)}
+                  placeholder="오늘 할 일 적기 (예: 강의 복습 30분)"
+                  className="border rounded-xl px-3 py-2 text-xs flex-1"
+                  style={{ ...inputStyle, background: COLORS.paper }}
+                />
+                <button type="submit" disabled={!todayTaskDraft.trim()} className="px-3 py-2 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: COLORS.strawberry, color: "#fff" }}>추가</button>
+              </form>
+              <div className="flex flex-col gap-1.5">
+                {todayTasks.map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 rounded-xl px-2.5 py-2" style={{ background: COLORS.paper, border: `1px solid ${COLORS.ruleLine}` }}>
+                    <button onClick={() => markComplete(t.name, t.id)} aria-label={`${t.name} 완료`} className="flex items-center justify-center rounded-full" style={{ width: 20, height: 20, border: `1.5px solid ${COLORS.mint}`, color: COLORS.mint, flex: "0 0 auto" }}><Check size={12} /></button>
+                    <span className="text-xs flex-1 truncate">{t.name}</span>
+                    <span className="text-[10px]" style={{ color: COLORS.muted }}>{t.estMin ? `${t.estMin}분` : "시간 모름"}</span>
+                  </div>
+                ))}
+                {todayTasks.length === 0 && <div className="text-xs py-1" style={{ color: COLORS.muted }}>아직 오늘 할 일이 없어요. 위에 바로 적어보세요.</div>}
+              </div>
             </div>
 
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
@@ -1826,11 +1845,10 @@ ${slotList || "(없음)"}
               )}
             </div>
 
-            {(plan?.weekImpact || top3Total > 0) && (
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-4 mb-3 shadow-sm">
-              {plan?.weekImpact && <h1 style={{ fontWeight:800, lineHeight: 1.35 }} className="text-2xl font-bold">
-                {plan.weekImpact}
-              </h1>}
+              <h1 style={{ fontWeight:800, lineHeight: 1.35 }} className="text-2xl font-bold">
+                {plan?.weekImpact ? plan.weekImpact : "수업 자료도 마감도 하루도 담아요"}
+              </h1>
               {top3Total > 0 && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between text-xs mb-1" style={{ color: COLORS.muted }}>
@@ -1843,7 +1861,6 @@ ${slotList || "(없음)"}
                 </div>
               )}
             </div>
-            )}
 
 
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
@@ -1860,67 +1877,6 @@ ${slotList || "(없음)"}
                 ))}
               </div>
             </div>
-
-            <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
-              <div className="text-xs font-semibold mb-2">주간 리뷰</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  ["완료", `${weekReview.done}개`],
-                  ["이번 주 마감", `${weekReview.dueThisWeek}개`],
-                  ["복습 필요", `${weekReview.reviewNeed}개`],
-                  ["시험 별표", `${weekReview.starred}개`],
-                ].map(([a,b]) => (
-                  <div key={a} className="rounded-xl px-2.5 py-2" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
-                    <div className="text-[10px]" style={{color:COLORS.muted}}>{a}</div>
-                    <div className="text-sm font-bold mt-0.5">{b}</div>
-                  </div>
-                ))}
-              </div>
-              {(weekReview.reviewNeed > 0 || weekReview.starred > 0) && (
-                <button onClick={() => { setActiveTab("shelf"); setOpenBook(null); setShelfFilter(weekReview.reviewNeed>0?"review":"all"); }}
-                  className="w-full mt-2 text-[11px] py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
-                  책장에서 복습·시험 범위 보기
-                </button>
-              )}
-            </div>
-
-            {(examBoardTasks.length > 0 || starredExamEntries.length > 0) && (
-              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold">시험·마감 보드</span>
-                  <span className="text-[10px]" style={{color:COLORS.muted}}>D-14 이내</span>
-                </div>
-                {examBoardTasks.slice(0, 6).map((t) => (
-                  <div key={t.id} className="flex items-center justify-between text-[11px] py-1.5" style={{borderBottom:`1px solid ${COLORS.ruleLine}`}}>
-                    <span className="truncate flex-1 pr-2">{t.name}</span>
-                    <span className="font-bold px-2 py-0.5 rounded-full" style={{background:ddayColor(t.d, COLORS), color: t.d<=2?"#fff":COLORS.ink, fontSize:10}}>{ddayLabel(t.d)}</span>
-                  </div>
-                ))}
-                {starredExamEntries.slice(0, 4).map((e) => (
-                  <button key={e.id} onClick={() => { setActiveTab("shelf"); setOpenBook(e.bookName); }}
-                    className="flex items-center justify-between w-full text-[11px] py-1.5 text-left" style={{borderBottom:`1px solid ${COLORS.ruleLine}`}}>
-                    <span className="truncate flex-1 pr-2">⭐ {e.bookName} · {e.date}</span>
-                    <span style={{color:COLORS.muted,fontSize:10}}>시험범위</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {!shelfSuggestHide && suggestedBooks.length > 0 && (
-              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold">책장에 과목 추가</span>
-                  <button onClick={dismissShelfSuggest} className="text-[10px]" style={{color:COLORS.muted}}>숨기기</button>
-                </div>
-                <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>시간표 과목을 자동으로 만들지 않아요. 원할 때만 추가하세요.</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {suggestedBooks.slice(0, 8).map((s) => (
-                    <button key={s} onClick={() => { addCustomBook(s); setActiveTab("shelf"); }} className="text-[11px] px-2.5 py-1 rounded-full"
-                      style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>+ {s}</button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
               <div className="flex items-center justify-between mb-2">
@@ -1953,7 +1909,7 @@ ${slotList || "(없음)"}
               )}
             </div>
 
-            <div style={{ background: darkMode ? COLORS.card : "linear-gradient(135deg, #FFF8F8, #FFFDF8)", border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+            <div style={{ background: "linear-gradient(135deg, #FFF8F8, #FFFDF8)", border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div><div className="text-xs font-semibold flex items-center gap-1"><Zap size={13}/> 틈 자동 매칭</div><div className="text-xs mt-0.5" style={{color:COLORS.muted}}>남는 시간 길이 + 마감 + 지금 에너지에 맞춰 바로 할 일을 골라요.</div></div>
               </div>
@@ -2069,14 +2025,14 @@ ${slotList || "(없음)"}
                         ) : (
                           <div className="flex gap-2 mt-3">
                             <button
-                              onClick={() => markComplete(item.task)}
+                              onClick={() => markComplete(item.task, t?.id)}
                               className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full font-medium transition-transform active:scale-95"
                               style={{ background: COLORS.mint, color: "#fff" }}
                             >
                               <Check size={12} /> {isChore ? "기록하기" : "완료"}
                             </button>
                             <button
-                              onClick={() => markPostpone(item.task)}
+                              onClick={() => markPostpone(item.task, t?.id)}
                               className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full transition-transform active:scale-95"
                               style={{ background: COLORS.paper, border: `1px solid ${COLORS.ruleLine}`, color: COLORS.muted }}
                             >
@@ -2177,7 +2133,7 @@ ${slotList || "(없음)"}
                               )}
                             </span>
                             {!t.due && (
-                              <button onClick={() => markComplete(t.name)} className="text-xs px-2 py-0.5 rounded-full" style={{ background: COLORS.mint, color: "#fff" }}>+ 기록</button>
+                              <button onClick={() => markComplete(t.name, t.id)} className="text-xs px-2 py-0.5 rounded-full" style={{ background: COLORS.mint, color: "#fff" }}>+ 기록</button>
                             )}
                             {!t.due && data.choreHistory?.[t.id]?.length > 0 && (
                               <button onClick={() => undoLastChoreLog(t.id)} style={{ color: COLORS.muted }}><Undo2 size={13} /></button>
@@ -2213,15 +2169,15 @@ ${slotList || "(없음)"}
               </div>
               <div className="flex flex-col gap-2">
                 {data.tasks.filter(t => t.name.toLowerCase().includes(taskSearch.toLowerCase())).filter(t => !(hideCompleted && data.completed[t.id])).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999')).map(t => {
-                  const done=!!data.completed[t.id]; const chore=!t.due; const notStarted = t.start && t.start > todayKey();
+                  const done=!!data.completed[t.id]; const chore=!t.due;
                   return <div key={t.id} className="pretty-card rounded-2xl p-3.5" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`,opacity:done?.62:1}}>
                     {editingTaskId===t.id ? <div className="flex flex-col gap-2">
                       <input value={editForm.name} onChange={e=>setEditForm({...editForm,name:e.target.value})} className="border rounded px-2 py-1.5 text-sm" style={inputStyle}/>
                       {!editForm.noDue && <div className="flex gap-2"><input type="date" value={editForm.start} onChange={e=>setEditForm({...editForm,start:e.target.value})} className="border rounded px-2 py-1 text-xs" style={inputStyle}/><input type="date" value={editForm.due} onChange={e=>setEditForm({...editForm,due:e.target.value})} className="border rounded px-2 py-1 text-xs" style={inputStyle}/></div>}
                       <div className="flex gap-2"><button onClick={saveEditTask} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.ink,color:'#fff'}}>저장</button><button onClick={()=>setEditingTaskId(null)} className="text-xs">취소</button></div>
                     </div> : <>
-                      <div className="flex justify-between gap-2"><div><div className="font-semibold text-sm" style={{textDecoration:done?'line-through':'none'}}>{t.name}{notStarted && <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-1.5" style={{background:COLORS.paper,color:COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{t.start} 시작</span>}</div><div className="text-xs mt-1" style={{color:COLORS.muted}}>{chore ? `생활 루틴 · ${(data.choreHistory?.[t.id]||[]).length}회 기록` : `${t.start||t.due} → ${t.due} · ${ddayLabel(daysUntil(t.due))}`} {t.estMin ? `· ${t.estMin}분` : ''}</div></div><div className="flex gap-1"><button onClick={()=>startEditTask(t)} style={{color:COLORS.muted}}><Pencil size={14}/></button><button onClick={()=>deleteTask(t.id)} style={{color:COLORS.coral}}><Trash2 size={14}/></button></div></div>
-                      <div className="flex gap-2 mt-3 flex-wrap">{done ? <button onClick={()=>undoComplete(t.id)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>완료 취소</button> : <button onClick={()=>markComplete(t.name)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.mint,color:'#fff'}}><Check size={12} style={{display:'inline'}}/> {chore?'기록':'완료'}</button>}
+                      <div className="flex justify-between gap-2"><div><div className="font-semibold text-sm" style={{textDecoration:done?'line-through':'none'}}>{t.name}</div><div className="text-xs mt-1" style={{color:COLORS.muted}}>{chore ? `생활 루틴 · ${(data.choreHistory?.[t.id]||[]).length}회 기록` : `${t.start||t.due} → ${t.due} · ${ddayLabel(daysUntil(t.due))}`} {t.estMin ? `· ${t.estMin}분` : ''}</div></div><div className="flex gap-1"><button onClick={()=>startEditTask(t)} style={{color:COLORS.muted}}><Pencil size={14}/></button><button onClick={()=>deleteTask(t.id)} style={{color:COLORS.coral}}><Trash2 size={14}/></button></div></div>
+                      <div className="flex gap-2 mt-3 flex-wrap">{done ? <button onClick={()=>undoComplete(t.id)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>완료 취소</button> : <button onClick={()=>markComplete(t.name, t.id)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.mint,color:'#fff'}}><Check size={12} style={{display:'inline'}}/> {chore?'기록':'완료'}</button>}
                       {!chore && !done && <button onClick={()=>applySplit(t)} className="text-xs px-3 py-1 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>공강에 나누기</button>}
                       {data.splits?.[t.id] && <button onClick={()=>clearSplit(t.id)} className="text-xs px-2 py-1 rounded-full" style={{color:COLORS.muted}}>계획 지우기</button>}</div>
 
@@ -2231,42 +2187,13 @@ ${slotList || "(없음)"}
                             공강에 나눈 계획 · {data.splits[t.id].slots.length}번
                             {data.splits[t.id].left >= 20 && <span style={{color:COLORS.strawberry}}> (남은 {data.splits[t.id].left}분은 자리 없음)</span>}
                           </div>
-                          <div className="text-[10px] mb-1.5" style={{color:COLORS.muted}}>길게 눌러 드래그하거나 ▲▼로 순서를 바꿔요</div>
                           {data.splits[t.id].slots.map((sl,i)=>(
-                            <div
-                              key={i}
-                              draggable
-                              onDragStart={(e) => {
-                                setDragSplit({ taskId: t.id, fromIdx: i });
-                                try { e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; } catch {}
-                              }}
-                              onDragOver={(e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch {} }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const from = dragSplit?.taskId === t.id ? dragSplit.fromIdx : i;
-                                if (dragSplit?.taskId === t.id) reorderSplitSlots(t.id, from, i);
-                                setDragSplit(null);
-                              }}
-                              onDragEnd={() => setDragSplit(null)}
-                              className="flex items-center gap-1.5 text-[11px] mb-1 rounded-lg px-1.5 py-1.5"
-                              style={{
-                                background: COLORS.card,
-                                border: `1px solid ${dragSplit?.taskId===t.id && dragSplit?.fromIdx===i ? COLORS.strawberry : COLORS.ruleLine}`,
-                                cursor: "grab",
-                                opacity: dragSplit?.taskId===t.id && dragSplit?.fromIdx===i ? 0.55 : 1,
-                                touchAction: "none",
-                              }}
-                            >
-                              <span style={{color:COLORS.muted,fontSize:12,lineHeight:1,userSelect:"none"}}>⋮⋮</span>
-                              <span style={{width:54,color:COLORS.muted,fontSize:10}}>{sl.date.slice(5).replace('-','/')} {sl.day}</span>
+                            <div key={i} className="flex items-center gap-2 text-[11px] mb-0.5">
+                              <span style={{width:52,color:COLORS.muted}}>{sl.date.slice(5).replace('-','/')} {sl.day}</span>
                               <span className="flex-1">{sl.start}~{sl.end}</span>
                               <span style={{color:COLORS.muted}}>{sl.min}분</span>
-                              <button type="button" onClick={()=>moveSplitSlot(t.id,i,-1)} className="p-0.5" style={{color:COLORS.muted}} title="위로"><ChevronUp size={12}/></button>
-                              <button type="button" onClick={()=>moveSplitSlot(t.id,i,1)} className="p-0.5" style={{color:COLORS.muted}} title="아래로"><ChevronDown size={12}/></button>
-                              <button type="button" onClick={()=>removeSplitSlot(t.id,i)} className="p-0.5" style={{color:COLORS.coral}} title="삭제"><X size={12}/></button>
                             </div>
                           ))}
-                          <button onClick={()=>applySplit(t)} className="text-[10px] mt-1 px-2 py-1 rounded-full" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>다시 배치하기</button>
                         </div>
                       )}
                     </>}
@@ -2311,27 +2238,59 @@ ${slotList || "(없음)"}
                 </button>
               </div>
               <div className="text-[10px]" style={{color:COLORS.muted}}>킹고포털 시간표를 캡처해서 올리면 과목·요일·시간을 읽어요</div>
+              {ttLoading && ttProgress && <div className="text-[10px] mt-1.5" style={{color:COLORS.muted}}>{ttProgress}</div>}
               {ttError && <div className="text-[10px] mt-1.5" style={{color:COLORS.strawberry}}>{ttError}</div>}
               <input ref={ttInputRef} type="file" accept="image/*" hidden
                 onChange={(e) => { readTimetableImage(e.target.files?.[0]); e.target.value=""; }}/>
 
               {ttFound && (
                 <div className="mt-2">
-                  <div className="text-[11px] font-bold mb-1.5">이렇게 읽었어요 · 맞는 것만 남기고 등록</div>
-                  {ttFound.map((x) => (
-                    <button key={x._id} onClick={() => setTtFound((prev) => prev.map((y) => y._id === x._id ? { ...y, use: !y.use } : y))}
-                      className="w-full flex items-center gap-2 rounded-xl px-2.5 py-1.5 mb-1 text-left"
-                      style={{background:x.use?COLORS.card:"transparent",border:`1px solid ${x.use?COLORS.mint:COLORS.ruleLine}`,opacity:x.use?1:.45}}>
-                      <span className="text-[11px] font-bold" style={{width:16}}>{x.day}</span>
-                      <span className="text-[11px] flex-1 truncate">{x.name}{x.room?` · ${x.room}`:""}</span>
-                      <span className="text-[10px]" style={{color:COLORS.muted}}>{x.start}~{x.end}</span>
-                    </button>
-                  ))}
+                  <div className="text-[11px] font-bold mb-0.5">이렇게 읽었어요 · 틀린 칸은 고치고 맞는 것만 등록</div>
+                  <div className="text-[10px] mb-1.5" style={{color:COLORS.muted}}>
+                    {ttEngine === "ocr" ? "무료 OCR로 읽었어요. AI보다 틀리기 쉬우니 시간·과목명을 꼭 확인해 주세요." : "AI로 읽었어요."}
+                  </div>
+                  {ttFound.map((x) => {
+                    const fieldStyle = { background: COLORS.paper, border: `1px solid ${COLORS.ruleLine}`, color: COLORS.ink };
+                    return (
+                      <div key={x._id} className="rounded-xl px-2 py-1.5 mb-1"
+                        style={{background:x.use?COLORS.card:"transparent",border:`1px solid ${x.use?COLORS.mint:COLORS.ruleLine}`,opacity:x.use?1:.45}}>
+                        <div className="flex items-center gap-1.5">
+                          <input type="checkbox" checked={!!x.use} onChange={() => updateTtRow(x._id, { use: !x.use })} aria-label="이 수업 등록" />
+                          <select value={x.day} onChange={(e) => updateTtRow(x._id, { day: e.target.value })}
+                            className="text-[11px] font-bold rounded-lg px-1 py-1" style={fieldStyle} aria-label="요일">
+                            {["월","화","수","목","금","토","일"].map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                          <input value={x.name} onChange={(e) => updateTtRow(x._id, { name: e.target.value })} placeholder="과목명"
+                            className="text-[11px] rounded-lg px-2 py-1 flex-1 min-w-0" style={fieldStyle} aria-label="과목명" />
+                          <button onClick={() => setTtFound((prev) => prev.filter((y) => y._id !== x._id))} aria-label="이 줄 삭제" style={{color:COLORS.muted}}><X size={13}/></button>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <input type="time" value={x.start || ""} onChange={(e) => updateTtRow(x._id, { start: e.target.value })}
+                            className="text-[11px] rounded-lg px-1.5 py-1" style={fieldStyle} aria-label="시작 시간" />
+                          <span className="text-[10px]" style={{color:COLORS.muted}}>~</span>
+                          <input type="time" value={x.end || ""} onChange={(e) => updateTtRow(x._id, { end: e.target.value })}
+                            className="text-[11px] rounded-lg px-1.5 py-1" style={fieldStyle} aria-label="끝 시간" />
+                          <input value={x.room || ""} onChange={(e) => updateTtRow(x._id, { room: e.target.value })} placeholder="강의실"
+                            className="text-[11px] rounded-lg px-2 py-1 flex-1 min-w-0" style={fieldStyle} aria-label="강의실" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button onClick={addTtRow} className="w-full text-[11px] py-1.5 rounded-xl mt-0.5"
+                    style={{background:"transparent",border:`1px dashed ${COLORS.ruleLine}`,color:COLORS.muted}}>
+                    <Plus size={11} style={{display:"inline"}}/> 수업 한 줄 추가
+                  </button>
+                  {ttRaw && (
+                    <details className="mt-1.5">
+                      <summary className="text-[10px] cursor-pointer" style={{color:COLORS.muted}}>무료 OCR이 읽은 글자 보기</summary>
+                      <pre className="text-[10px] mt-1 p-2 rounded-lg whitespace-pre-wrap" style={{background:COLORS.paper,color:COLORS.ink,maxHeight:160,overflow:"auto",fontFamily:"inherit"}}>{ttRaw}</pre>
+                    </details>
+                  )}
                   <div className="flex gap-1.5 mt-2">
                     <button onClick={saveTimetable} className="flex-1 text-[11px] py-2 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>
                       {ttFound.filter((x)=>x.use).length}개 등록하기
                     </button>
-                    <button onClick={() => setTtFound(null)} className="text-[11px] px-3 py-2 rounded-full"
+                    <button onClick={() => { setTtFound(null); setTtEngine(""); setTtRaw(""); setTtError(""); }} className="text-[11px] px-3 py-2 rounded-full"
                       style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.muted}}>취소</button>
                   </div>
                 </div>
@@ -2529,17 +2488,6 @@ ${slotList || "(없음)"}
               </div>
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
-                <div className="text-xs font-semibold mb-1">데이터 정리</div>
-                <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>테스트로 넣었던 항목들을 한 번에 지울 수 있어요. 지운 데이터는 되돌릴 수 없어요.</div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => { if (!window.confirm("할 일을 전부 삭제할까요? 되돌릴 수 없어요.")) return; setData((prev) => ({ ...prev, tasks: [], completed: {}, postponed: {}, splits: {}, plan: null })); }}
-                    className="text-[11px] px-3 py-1.5 rounded-full flex-1" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.coral}}>할 일 전체 삭제</button>
-                  <button onClick={() => { if (!window.confirm("시간표를 전부 삭제할까요? 되돌릴 수 없어요.")) return; setData((prev) => ({ ...prev, classes: [], prepByClass: {} })); }}
-                    className="text-[11px] px-3 py-1.5 rounded-full flex-1" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.coral}}>시간표 전체 삭제</button>
-                </div>
-              </div>
-
-              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold">완료 통계</span>
                   <div className="flex gap-1">
@@ -2573,15 +2521,6 @@ ${slotList || "(없음)"}
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm">테마 색</span>
-                  <div className="flex gap-1">
-                    {Object.keys(LIGHT_THEMES).map((nm) => (
-                      <button key={nm} onClick={() => pickTheme(nm)} className="px-2.5 py-1 rounded-full text-xs"
-                        style={{ background: themeName === nm && !darkMode ? COLORS.ink : COLORS.paper, color: themeName === nm && !darkMode ? "#fff" : COLORS.muted, border: `1px solid ${COLORS.ruleLine}` }}>{nm}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-2">
                   <span className="text-sm">다크모드</span>
                   <button onClick={toggleDarkMode} className="px-3 py-1 rounded-full text-xs font-medium" style={{ background: darkMode ? COLORS.ink : COLORS.paper, color: darkMode ? "#fff" : COLORS.muted, border: `1px solid ${COLORS.ruleLine}` }}>
                     {darkMode ? "켜짐" : "꺼짐"}
@@ -2601,17 +2540,6 @@ ${slotList || "(없음)"}
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="text-xs font-semibold flex items-center gap-1 mb-2"><ShieldCheck size={13}/> 내 데이터</div>
-                <div className="rounded-xl px-2.5 py-2 mb-2 text-[11px]" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span>클라우드 (시간표·할 일)</span>
-                    <span style={{color: saveWarning ? COLORS.coral : COLORS.mint, fontWeight:700}}>{saveWarning ? "저장 지연" : "동기화됨"}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>이 기기 (책장 자료)</span>
-                    <span style={{color:COLORS.mint, fontWeight:700}}>로컬 {(() => { const u = shelfUsage(shelf); return `${u.files}파일 · ${u.mb.toFixed(1)}MB`; })()}</span>
-                  </div>
-                  <div className="text-[10px] mt-1.5" style={{color:COLORS.muted}}>오프라인에서도 책장·할 일 목록을 볼 수 있어요. 클라우드 항목은 온라인 때 동기화돼요.</div>
-                </div>
                 <div className="text-xs mb-2" style={{color:COLORS.muted}}>시간표·할 일·준비물 메모는 계정에 저장되고, 책장 PDF·녹음은 이 브라우저에 저장돼요.</div>
                 <div className="text-[10px] mb-3" style={{color:COLORS.muted}}>JSON 백업에는 책장 자료도 포함돼요. 자료가 많으면 파일이 커질 수 있어요.</div>
                 <div className="flex flex-wrap gap-2">
@@ -2621,7 +2549,6 @@ ${slotList || "(없음)"}
                   <button onClick={clearMyCloudData} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:'#B3261E'}}>내 플래너 데이터 삭제</button>
                 </div>
                 <div className="mt-3 pt-3" style={{borderTop:`1px dashed ${COLORS.ruleLine}`}}>
-                  <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>홈 화면 바로가기: 브라우저 메뉴에서 「홈 화면에 추가」하면 앱처럼 쓸 수 있어요. (PWA)</div>
                   <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>GitHub Pages에서 AI를 쓰려면 Vercel API 주소를 빌드 환경에 연결해야 해요.</div>
                   <button onClick={deleteAccount} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:'#B3261E'}}>회원탈퇴</button>
                 </div>
@@ -2643,13 +2570,7 @@ ${slotList || "(없음)"}
               <div className="flex items-end justify-between mb-3">
                 <div>
                   <div className="text-base font-semibold">마감함</div>
-                  <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>성대 채용·모집 공지 모아보기</div>
-                  <div className="flex gap-1.5 mt-2">
-                    {["마감순","등록순"].map((s)=>(
-                      <button key={s} onClick={()=>setJobsSort(s)} className="text-[11px] px-3 py-1 rounded-full"
-                        style={{background:jobsSort===s?COLORS.ink:COLORS.paper,color:jobsSort===s?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{s}</button>
-                    ))}
-                  </div>
+                  <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>성대 채용·모집 공지를 마감순으로</div>
                 </div>
                 {jobs?.updated && <div className="text-[10px]" style={{color:COLORS.muted}}>{jobs.updated.slice(5,10)} 기준</div>}
               </div>
@@ -2665,9 +2586,8 @@ ${slotList || "(없음)"}
 
               {meals?.days && (() => {
                 const t = todayKey();
-                const md = pickMealDay(meals, t);
-                if (!md) return null;
-                const m = md.m;
+                const m = meals.days[t];
+                if (!m) return null;
                 const Row = ({ label, arr }) => (arr && arr.length) ? (
                   <div className="mb-1.5">
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full mr-1.5" style={{background:COLORS.paper,color:COLORS.muted}}>{label}</span>
@@ -2676,7 +2596,7 @@ ${slotList || "(없음)"}
                 ) : null;
                 return (
                   <div className="rounded-2xl p-3 mb-4" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
-                    <div className="text-xs font-bold mb-2">{mealDayLabel(md)}</div>
+                    <div className="text-xs font-bold mb-2">오늘 봉룡학사</div>
                     <Row label="조식" arr={m.breakfast}/>
                     <Row label="중식" arr={m.lunch}/>
                     <Row label="석식" arr={m.dinner}/>
@@ -2685,9 +2605,8 @@ ${slotList || "(없음)"}
               })()}
 
               {jobs && (() => {
+                const list = (jobs.items || []).filter((j) => !jobsHide.includes(j.id));
                 const today = todayKey();
-                const list = (jobs.items || []).filter((j) => !jobsHide.includes(j.id))
-                  .filter((j) => !j.posted || (new Date(today) - new Date(j.posted)) / 86400000 <= 14);
                 const dday = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
                 const soon = list.filter((j) => j.due && dday(j.due) >= 0 && dday(j.due) <= 7);
                 const later = list.filter((j) => j.due && dday(j.due) > 7);
@@ -2726,11 +2645,6 @@ ${slotList || "(없음)"}
 
                 if (!list.length) return <div className="text-xs text-center py-8" style={{color:COLORS.muted}}>지금은 볼 공지가 없어요</div>;
 
-                if (jobsSort === "등록순") {
-                  const byPosted = [...list].sort((a, b) => (b.posted || "").localeCompare(a.posted || ""));
-                  return <>{byPosted.map((j) => <Card key={j.id} j={j}/>)}</>;
-                }
-
                 return (
                   <>
                     {soon.length > 0 && <>
@@ -2759,11 +2673,9 @@ ${slotList || "(없음)"}
                   <div className="flex items-end justify-between mb-3">
                     <div>
                       <div className="text-base font-semibold">책장</div>
-                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>과목·주제를 직접 추가해서 모아요</div>
+                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>시간표 과목이 책으로 꽂혀요</div>
                     </div>
                     <div className="text-right">
-                      <button onClick={() => addCustomBook()} className="text-[11px] px-2.5 py-1 rounded-full mb-1 mr-1"
-                        style={{background:COLORS.ink,color:"#fff"}}>+ 책 추가</button>
                       <button onClick={() => setScanOpen(true)} className="text-[11px] px-2.5 py-1 rounded-full mb-1"
                         style={{background:COLORS.mint,color:"#fff"}}>교재 스캔</button>
                       <div className="text-[10px]" style={{color:COLORS.muted}}>
@@ -2772,76 +2684,27 @@ ${slotList || "(없음)"}
                     </div>
                   </div>
 
-                  {!shelfSuggestHide && suggestedBooks.length > 0 && (
-                    <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="text-xs font-semibold">시간표에서 추가할까요?</div>
-                        <button onClick={dismissShelfSuggest} className="text-[10px]" style={{color:COLORS.muted}}>더 이상 안 보기</button>
-                      </div>
-                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>자동으로 만들지 않아요. 원하는 과목만 골라 넣으세요.</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {suggestedBooks.map((s) => (
-                          <button key={s} onClick={() => addCustomBook(s)} className="text-[11px] px-2.5 py-1 rounded-full"
-                            style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>+ {s}</button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {shelfBookNames.length === 0 ? (
+                  {subjectsFromClasses(data.classes).length === 0 ? (
                     <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <BookOpen size={28} style={{margin:"0 auto 8px",color:COLORS.muted}}/>
                       <div className="text-sm font-semibold mb-1">아직 책이 없어요</div>
-                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>원하는 과목·주제 이름으로 책을 직접 추가해요<br/>시간표와는 따로 관리돼요</div>
-                      <div className="flex gap-1.5 justify-center">
-                        <button onClick={() => addCustomBook()} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}>+ 책 추가</button>
-                      </div>
+                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣으면 과목마다 책이 한 권씩 생겨요</div>
+                      <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
                     </div>
                   ) : (
-                    <>
-                    <div className="flex gap-1.5 mb-2">
-                      <input value={shelfSearch} onChange={(e)=>setShelfSearch(e.target.value)} placeholder="책·태그·메모 검색"
-                        className="flex-1 text-xs rounded-full px-3 py-1.5" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.ink}}/>
-                      <button onClick={()=>setShelfFilter(shelfFilter==="review"?"all":"review")} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap"
-                        style={{background:shelfFilter==="review"?COLORS.strawberry:COLORS.paper,color:shelfFilter==="review"?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>
-                        복습 {reviewQueue.length}
-                      </button>
-                    </div>
-                    {shelfFilter === "review" && reviewQueue.length > 0 && (
-                      <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
-                        <div className="text-xs font-semibold mb-2">복습 큐 · {reviewQueue.length}개</div>
-                        <div className="flex flex-col gap-1.5">
-                          {reviewQueue.slice(0, 12).map((e) => (
-                            <button key={e.id} onClick={() => { setOpenBook(e.bookName); setEntrySearch(""); }}
-                              className="text-left text-[11px] px-2.5 py-2 rounded-xl"
-                              style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
-                              <span className="font-semibold">{e.bookName}</span>
-                              <span style={{color:COLORS.muted}}> · {e.date}</span>
-                              <div className="truncate mt-0.5" style={{color:COLORS.muted}}>{(e.memo||"").slice(0,60) || "메모 없음"}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-[10px] mb-2 rounded-xl px-2.5 py-2" style={{background:COLORS.paper,color:COLORS.muted,border:`1px dashed ${COLORS.ruleLine}`}}>📖 책을 열면 녹음(자동 대본) · 자료 · AI 요약 · 교수님 출제 분석을 쓸 수 있어요</div>
                     <div className="grid grid-cols-3 gap-3">
-                      {filteredShelfNames.map((name, i) => {
+                      {subjectsFromClasses(data.classes).map((name, i) => {
                         const book = getBook(name);
                         const cnt = (book.entries || []).length;
                         const need = (book.entries || []).filter((e) => e.understand === "review" || e.understand === "no").length;
-                        const col = book.color || BOOK_COLORS[i % BOOK_COLORS.length];
+                        const col = BOOK_COLORS[i % BOOK_COLORS.length];
                         return (
-                          <button key={name} onClick={() => { setOpenBook(name); setEntrySearch(""); }}
+                          <button key={name} onClick={() => setOpenBook(name)}
                             className="relative rounded-lg text-left p-2.5"
                             style={{aspectRatio:"3/4",background:col,boxShadow:"0 4px 10px rgba(119,84,80,.18)",overflow:"hidden"}}>
                             <div style={{position:"absolute",left:0,top:0,bottom:0,width:9,background:"rgba(0,0,0,.14)"}}/>
                             <div className="flex flex-col h-full justify-between" style={{paddingLeft:8}}>
-                              <div>
-                                <div className="text-[11px] font-bold leading-tight" style={{color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.18)"}}>{name}</div>
-                                {(book.tags||[]).length > 0 && (
-                                  <div className="text-[8px] mt-1" style={{color:"rgba(255,255,255,.85)"}}>{(book.tags||[]).slice(0,2).join(" · ")}</div>
-                                )}
-                              </div>
+                              <div className="text-[11px] font-bold leading-tight" style={{color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.18)"}}>{name}</div>
                               <div>
                                 <div className="text-[9px]" style={{color:"rgba(255,255,255,.9)"}}>{cnt}회차</div>
                                 {need > 0 && <div className="text-[9px] font-bold" style={{color:"#fff"}}>복습 {need}</div>}
@@ -2851,10 +2714,6 @@ ${slotList || "(없음)"}
                         );
                       })}
                     </div>
-                    {filteredShelfNames.length === 0 && (
-                      <div className="text-xs text-center py-6" style={{color:COLORS.muted}}>검색 결과가 없어요</div>
-                    )}
-                    </>
                   )}
                 </>
               )}
@@ -2870,34 +2729,10 @@ ${slotList || "(없음)"}
                         <div className="text-base font-semibold">{openBook}</div>
                         <div className="text-xs" style={{color:COLORS.muted}}>{entries.length}회차 기록</div>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        <button onClick={() => renameBook(openBook)} className="p-1.5 rounded-full" style={{background:COLORS.paper}} title="이름 바꾸기"><Pencil size={13}/></button>
-                        <button onClick={() => removeBook(openBook)} className="p-1.5 rounded-full" style={{background:COLORS.paper}} title="책 삭제"><Trash2 size={13} style={{color:COLORS.muted}}/></button>
+                      <div className="flex items-center gap-1.5">
                         <button onClick={() => analyzeProfessorStyle(openBook)} disabled={analysisLoading} className="text-[10px] px-2.5 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff",opacity:analysisLoading?.6:1}}>{analysisLoading ? "분석 중…" : "교수님 분석"}</button>
                         <button onClick={() => addEntry(openBook, {})} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}><Plus size={12} style={{display:"inline"}}/> 오늘 수업</button>
                       </div>
-                    </div>
-
-                    <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
-                      <div className="text-[10px] font-semibold mb-1.5" style={{color:COLORS.muted}}>표지 색</div>
-                      <div className="flex gap-1.5 mb-2 flex-wrap">
-                        {BOOK_COLORS.map((c) => (
-                          <button key={c} onClick={() => setBookColor(openBook, c)}
-                            className="w-6 h-6 rounded-full" style={{background:c,border: (book.color||"")===c ? `2px solid ${COLORS.ink}` : "2px solid transparent"}} />
-                        ))}
-                      </div>
-                      <div className="text-[10px] font-semibold mb-1.5" style={{color:COLORS.muted}}>태그</div>
-                      <div className="flex gap-1 flex-wrap mb-2">
-                        {["전공","교양","시험","과제","복습","기타"].map((tag) => {
-                          const on = (book.tags || []).includes(tag);
-                          return (
-                            <button key={tag} onClick={() => toggleBookTag(openBook, tag)} className="text-[10px] px-2 py-0.5 rounded-full"
-                              style={{background:on?COLORS.ink:COLORS.paper,color:on?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{tag}</button>
-                          );
-                        })}
-                      </div>
-                      <input value={entrySearch} onChange={(e)=>setEntrySearch(e.target.value)} placeholder="이 책 안에서 메모 검색"
-                        className="w-full text-xs rounded-full px-3 py-1.5" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.ink}}/>
                     </div>
 
                     <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px dashed ${COLORS.ruleLine}`}}>
@@ -2909,7 +2744,7 @@ ${slotList || "(없음)"}
 
                     <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <div className="text-xs font-bold mb-1">PDF·녹음 대본에서 필요한 페이지만 정리</div>
-                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>크롬에서 녹음하면 대본이 자동으로 만들어져요. 대본 옆 ‘필기본 만들기’를 누르면 보존형·핵심 요약·필기본을 한 번에 정리해요. AI 결과는 참고용이에요.</div>
+                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>녹음 대본 PDF는 ‘대본 3종 정리’를 누르면 보존형·핵심 요약·필기본을 한 번에 만들어요. AI 결과는 참고용이에요.</div>
                       <label className="flex items-center justify-center gap-2 w-full rounded-xl py-2.5 text-xs cursor-pointer mb-2"
                         style={{background:COLORS.card,border:`1px dashed ${COLORS.muted}`}}>
                         {pdfFile ? `${pdfFile.name.slice(0,22)}${pdfPages?` · ${pdfPages}p`:""}` : "PDF 선택"}
@@ -2940,18 +2775,41 @@ ${slotList || "(없음)"}
                       {sumError && <div className="text-[10px] mt-1.5" style={{color:COLORS.strawberry}}>{sumError}</div>}
                     </div>
 
+                    <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
+                      <div className="text-xs font-bold mb-1">녹음 전사문 → 필기본</div>
+                      <div className="text-[10px] mb-2 leading-relaxed" style={{color:COLORS.muted}}>
+                        녹음을 한글로 변환한 내용을 붙여넣으면 개념·예시·교수님 강조·시험 포인트가 있는 필기본으로 정리해요. 원문도 txt로 함께 보관돼요.
+                      </div>
+                      <textarea
+                        value={transcriptText}
+                        onChange={(e)=>setTranscriptText(e.target.value)}
+                        rows={7}
+                        placeholder="여기에 한글 전사문을 붙여넣어 주세요"
+                        className="w-full text-xs rounded-xl px-3 py-2 mb-2"
+                        style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`,resize:"vertical",color:COLORS.ink}}
+                      />
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px]" style={{color:COLORS.muted}}>{transcriptText.trim().length.toLocaleString()}자</span>
+                        <button onClick={()=>setTranscriptText("")} disabled={!transcriptText || transcriptLoading}
+                          className="text-[10px] px-2 py-1 rounded-full" style={{background:COLORS.card,color:COLORS.muted}}>비우기</button>
+                      </div>
+                      <button onClick={()=>transcriptToNotes(openBook)} disabled={transcriptLoading || transcriptText.trim().length < 50}
+                        className="w-full text-xs py-2 rounded-full"
+                        style={{background:COLORS.strawberry,color:"#fff",opacity:(transcriptLoading || transcriptText.trim().length < 50)?.55:1}}>
+                        {transcriptLoading ? "Gemini가 필기하는 중…" : "필기본 만들기"}
+                      </button>
+                      {transcriptError && <div className="text-[10px] mt-1.5" style={{color:COLORS.strawberry}}>{transcriptError}</div>}
+                    </div>
+
                     {entries.length === 0 && (
                       <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                         <div className="text-sm font-semibold mb-1">첫 수업을 기록해 볼까요?</div>
-                        <div className="text-xs" style={{color:COLORS.muted}}>녹음 · 자료 · 수업 노트를 회차별로 모아둬요</div>
+                        <div className="text-xs" style={{color:COLORS.muted}}>녹음 · 자료 · 메모 3줄을 회차별로 모아둬요</div>
                       </div>
                     )}
 
                     <div className="flex flex-col gap-3">
-                      {(entrySearch.trim()
-                        ? entries.filter((en) => (en.memo||"").toLowerCase().includes(entrySearch.trim().toLowerCase()) || (en.date||"").includes(entrySearch.trim()))
-                        : entries
-                      ).map((en) => {
+                      {entries.map((en) => {
                         const isRec = recording && recording.entryId === en.id;
                         return (
                           <div key={en.id} className="rounded-2xl p-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
@@ -2975,7 +2833,7 @@ ${slotList || "(없음)"}
                             )}
 
                             <textarea value={en.memo} onChange={(e) => patchEntry(openBook, en.id, { memo: e.target.value })}
-                              rows={en.memo && en.memo.length > 160 ? 12 : 4} placeholder="이 회차 수업 노트를 자유롭게 적어요 — 길게 써도 돼요"
+                              rows={3} placeholder="핵심 3줄만 남겨보기"
                               className="w-full text-sm rounded-xl px-2.5 py-2 mb-2"
                               style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,resize:"none",color:COLORS.ink}}/>
 
@@ -2993,16 +2851,9 @@ ${slotList || "(없음)"}
                               <div className="flex flex-col gap-1 mb-2">
                                 {en.files.map((f) => (
                                   <div key={f.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{background:COLORS.paper}}>
-                                    <span className="text-[11px] flex-1 truncate">{f.type === "audio" ? "🎙 " : f.type === "transcript" ? "📝 " : "📎 "}{f.name}</span>
-                                    {f.type !== "transcript" && <span className="text-[9px]" style={{color:COLORS.muted}}>{fmtSize(f.size)}</span>}
-                                    {f.type === "transcript" ? (
-                                      <button onClick={() => summarizeTranscript(openBook, f)} disabled={trBusyId === f.id}
-                                        className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff",opacity:trBusyId===f.id?0.6:1,whiteSpace:"nowrap"}}>
-                                        {trBusyId === f.id ? "만드는 중…" : "필기본 만들기"}
-                                      </button>
-                                    ) : (
-                                      <a href={f.url} download={f.name} className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>열기</a>
-                                    )}
+                                    <span className="text-[11px] flex-1 truncate">{f.type === "audio" ? "🎙 " : "📎 "}{f.name}</span>
+                                    <span className="text-[9px]" style={{color:COLORS.muted}}>{fmtSize(f.size)}</span>
+                                    <a href={f.url} download={f.name} className="text-[10px] px-2 py-0.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>열기</a>
                                   </div>
                                 ))}
                               </div>
@@ -3046,7 +2897,7 @@ ${slotList || "(없음)"}
           {activeTab === "diary" && (
             <div style={{ height: "calc(100vh - 62px)", background: COLORS.paper, position: "relative" }}>
               <iframe
-                {...(typeof window !== "undefined" && window.__DIARY_HTML__ ? { srcDoc: window.__DIARY_HTML__ } : { src: DIARY_SRC + "#damda=" + encodeURIComponent(auth?.userId || "") })}
+                {...(typeof window !== "undefined" && window.__DIARY_HTML__ ? { srcDoc: window.__DIARY_HTML__ } : { src: DIARY_SRC })}
                 title="일기"
                 style={{ width: "100%", height: "100%", border: 0, display: "block" }}
                 allow="clipboard-write"
@@ -3054,7 +2905,7 @@ ${slotList || "(없음)"}
             </div>
           )}
 
-          <div style={{ borderTop: `1px solid ${COLORS.ruleLine}`, background: darkMode ? "rgba(27,30,37,.94)" : "rgba(255,253,252,.94)", boxShadow: "0 -8px 24px rgba(119,84,80,.05)" }} className="flex items-center justify-around py-3">
+          <div style={{ borderTop: `1px solid ${COLORS.ruleLine}`, background: "rgba(255,253,252,.94)", boxShadow: "0 -8px 24px rgba(119,84,80,.05)" }} className="flex items-center justify-around py-3">
             <button onClick={() => setActiveTab("home")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "home" ? COLORS.ink : COLORS.muted, opacity: activeTab === "home" ? 1 : 0.5 }}><Home size={18}/><span style={{fontSize:10}}>홈</span></button>
             <button onClick={() => setActiveTab("tasks")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "tasks" ? COLORS.ink : COLORS.muted, opacity: activeTab === "tasks" ? 1 : 0.5 }}><ListTodo size={18}/><span style={{fontSize:10}}>할 일</span></button>
             <button onClick={() => setActiveTab("calendar")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "calendar" ? COLORS.ink : COLORS.muted, opacity: activeTab === "calendar" ? 1 : 0.5 }}><CalendarDays size={18}/><span style={{fontSize:10}}>시간표</span></button>

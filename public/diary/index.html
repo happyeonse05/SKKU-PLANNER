@@ -1,3 +1,5 @@
+USER=null; PFX="";
+boot();
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -2165,11 +2167,7 @@ localGet("sb:session").then(function(sess){
   if(done) return;
   return localGet("session").then(function(ss){
     if(ss&&ss.mail&&!cloudReady()){ USER=ss.mail; PFX="u:"+ss.mail+":"; boot(); }
-    else {
-      var dm=(location.hash.match(/damda=([\w.\-]+)/)||[])[1];
-      USER=null; PFX=dm?("damda:"+dm+":"):"";
-      hideAuth(); boot();
-    }
+    else showAuth();
   });
 });
 })();
