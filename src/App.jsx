@@ -51,7 +51,7 @@ button, input, select { font-family: inherit; }
 
 /* Pencil-doodle icon treatment: preserves every button/action while making
    the existing SVG icon set feel hand-drawn instead of like phone emoji. */
-svg.lucide { stroke:#9A7772; stroke-width:1.55; filter:drop-shadow(.25px .35px 0 rgba(168,144,120,.20)); }
+svg.lucide { stroke:currentColor; stroke-width:1.55; filter:drop-shadow(.25px .35px 0 rgba(0,0,0,.10)); }
 
 `;
 
@@ -69,15 +69,17 @@ const LIGHT_COLORS = {
   leaf: "#8EAF8F",
 };
 const DARK_COLORS = {
-  page: "#221720",
-  paper: "#2C1E29",
-  card: "#3A2733",
-  ruleLine: "#4A3540",
-  ink: "#FDEDF1",
-  muted: "#C79FB0",
-  yellow: "#FFD166",
-  coral: "#FF8080",
-  mint: "#3BD6C6",
+  page: "#14161B",
+  paper: "#1B1E25",
+  card: "#232732",
+  ruleLine: "#333947",
+  ink: "#E9EBF2",
+  muted: "#98A1B3",
+  yellow: "#D9B45C",
+  coral: "#D9848E",
+  mint: "#63B49C",
+  strawberry: "#7C90C4",
+  leaf: "#7FA98F",
 };
 
 const RANK_LABELS = ["1순위", "2순위", "3순위"];
@@ -1541,14 +1543,14 @@ ${slotList || "(없음)"}
   const streakCount = data?.streak?.count || 0;
 
   return (
-    <div style={{ background: `linear-gradient(rgba(255,255,255,.26) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.26) 1px, transparent 1px), radial-gradient(circle at 18% 8%, #FFF9F5 0 90px, transparent 91px), radial-gradient(circle at 85% 28%, #F2D8D5 0 75px, transparent 76px), ${COLORS.page}`, backgroundSize: "22px 22px, 22px 22px, auto, auto, auto", minHeight: "100vh", padding: "24px 12px", position: "relative", overflow: "hidden" }}>
+    <div style={{ background: `linear-gradient(${darkMode ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.26)"} 1px, transparent 1px), linear-gradient(90deg, ${darkMode ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.26)"} 1px, transparent 1px), radial-gradient(circle at 18% 8%, ${COLORS.paper} 0 90px, transparent 91px), radial-gradient(circle at 85% 28%, ${COLORS.ruleLine} 0 75px, transparent 76px), ${COLORS.page}`, backgroundSize: "22px 22px, 22px 22px, auto, auto, auto", minHeight: "100vh", padding: "24px 12px", position: "relative", overflow: "hidden" }}>
       
       <TinyFlower style={{ left: "max(28px, calc(50% - 245px))", top: 155 }} />
       <TinyFlower style={{ right: "max(24px, calc(50% - 250px))", top: 105, fontSize: 22, opacity: .65 }} />
       
       
       <style>{GLOBAL_STYLE}</style>
-      <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: "rgba(255,253,252,.76)", border: "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(102,71,68,.42)", backdropFilter: "blur(12px)" }}>
+      <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: darkMode ? "rgba(27,30,37,.85)" : "rgba(255,253,252,.76)", border: darkMode ? "1px solid rgba(255,255,255,.08)" : "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(0,0,0,.45)", backdropFilter: "blur(12px)" }}>
         <div className="gingham" style={{ backgroundColor: COLORS.paper, borderRadius: 31, overflow: "hidden", position: "relative", minHeight: 760, display: "flex", flexDirection: "column", fontFamily: "'Gowun Dodum', 'IBM Plex Sans KR', sans-serif", color: COLORS.ink, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.75)" }}>
           <div style={{ height: 12 }} />
 
