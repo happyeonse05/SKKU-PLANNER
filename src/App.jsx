@@ -82,6 +82,16 @@ const DARK_COLORS = {
 
 const RANK_LABELS = ["1순위", "2순위", "3순위"];
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+function pickMealDay(meals, t) {
+  const days = meals?.days || {};
+  if (days[t]) return { key: t, m: days[t], isToday: true };
+  const k = Object.keys(days).filter((d) => d > t).sort()[0];
+  return k ? { key: k, m: days[k], isToday: false } : null;
+}
+function mealDayLabel(md) {
+  if (!md) return "오늘 봉룡학사";
+  return md.isToday ? "오늘 봉룡학사" : `${WEEKDAY_LABELS[new Date(md.key).getDay()]}요일 봉룡학사 미리보기`;
+}
 const DAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
 const DOW_TO_DAY = { 0: "일", 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토" };
 
@@ -1545,14 +1555,15 @@ ${slotList || "(없음)"}
             <>
             {(() => {
               const t = todayKey();
-              const m = meals?.days?.[t];
+              const md = pickMealDay(meals, t);
+              const m = md?.m;
               const dday = (d) => Math.round((new Date(d) - new Date(t)) / 86400000);
               const soon = (jobs?.items || []).filter((j) => !jobsHide.includes(j.id) && j.due && dday(j.due) >= 0 && dday(j.due) <= 7);
               return (
                 <>
                   <div className="flex gap-2 mb-3">
                     <div className="flex-1 rounded-2xl p-3" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
-                      <div className="text-[10px] mb-1" style={{color:COLORS.muted}}>오늘 봉룡학사</div>
+                      <div className="text-[10px] mb-1" style={{color:COLORS.muted}}>{mealDayLabel(md)}</div>
                       {m ? (
                         <div className="text-[11px] leading-snug">
                           {m.lunch?.length ? <><b>점심</b> {m.lunch.slice(0,3).join(" · ")}<br/></> : null}
@@ -2356,8 +2367,9 @@ ${slotList || "(없음)"}
 
               {meals?.days && (() => {
                 const t = todayKey();
-                const m = meals.days[t];
-                if (!m) return null;
+                const md = pickMealDay(meals, t);
+                if (!md) return null;
+                const m = md.m;
                 const Row = ({ label, arr }) => (arr && arr.length) ? (
                   <div className="mb-1.5">
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full mr-1.5" style={{background:COLORS.paper,color:COLORS.muted}}>{label}</span>
@@ -2366,7 +2378,7 @@ ${slotList || "(없음)"}
                 ) : null;
                 return (
                   <div className="rounded-2xl p-3 mb-4" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
-                    <div className="text-xs font-bold mb-2">오늘 봉룡학사</div>
+                    <div className="text-xs font-bold mb-2">{mealDayLabel(md)}</div>
                     <Row label="조식" arr={m.breakfast}/>
                     <Row label="중식" arr={m.lunch}/>
                     <Row label="석식" arr={m.dinner}/>
@@ -2375,8 +2387,9 @@ ${slotList || "(없음)"}
               })()}
 
               {jobs && (() => {
-                const list = (jobs.items || []).filter((j) => !jobsHide.includes(j.id));
                 const today = todayKey();
+                const list = (jobs.items || []).filter((j) => !jobsHide.includes(j.id))
+                  .filter((j) => !j.posted || (new Date(today) - new Date(j.posted)) / 86400000 <= 14);
                 const dday = (d) => Math.round((new Date(d) - new Date(today)) / 86400000);
                 const soon = list.filter((j) => j.due && dday(j.due) >= 0 && dday(j.due) <= 7);
                 const later = list.filter((j) => j.due && dday(j.due) > 7);
