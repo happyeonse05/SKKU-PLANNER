@@ -1496,11 +1496,7 @@ ${slotList || "(없음)"}
       <style>{GLOBAL_STYLE}</style>
       <div style={{ width: 410, maxWidth: "100%", margin: "0 auto", background: "rgba(255,253,252,.76)", border: "1px solid rgba(143,111,105,.16)", borderRadius: 38, padding: 8, boxShadow: "0 26px 70px -28px rgba(102,71,68,.42)", backdropFilter: "blur(12px)" }}>
         <div className="gingham" style={{ backgroundColor: COLORS.paper, borderRadius: 31, overflow: "hidden", position: "relative", minHeight: 760, display: "flex", flexDirection: "column", fontFamily: "'Gowun Dodum', 'IBM Plex Sans KR', sans-serif", color: COLORS.ink, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.75)" }}>
-          <div style={{ position: "absolute", top: 9, left: "50%", transform: "translateX(-50%)", width: 76, height: 20, background: "#5C4A48", borderRadius: 14, zIndex: 20, opacity: .92 }} />
-          <div className="flex items-center justify-between px-6 pt-3.5 pb-1">
-            <span className="text-xs font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{nowHHMM()}</span>
-            <StatusIcons colors={COLORS} />
-          </div>
+          <div style={{ height: 12 }} />
 
           {!auth ? (
             <div className="flex-1 flex flex-col items-center justify-center px-8 text-center" style={{ animation: "fadeIn 0.4s ease both" }}>
@@ -1650,10 +1646,11 @@ ${slotList || "(없음)"}
               )}
             </div>
 
+            {(plan?.weekImpact || top3Total > 0) && (
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-4 mb-3 shadow-sm">
-              <h1 style={{ fontWeight:800, lineHeight: 1.35 }} className="text-2xl font-bold">
-                {plan?.weekImpact ? plan.weekImpact : "수업 자료도 마감도 하루도 담아요"}
-              </h1>
+              {plan?.weekImpact && <h1 style={{ fontWeight:800, lineHeight: 1.35 }} className="text-2xl font-bold">
+                {plan.weekImpact}
+              </h1>}
               {top3Total > 0 && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between text-xs mb-1" style={{ color: COLORS.muted }}>
@@ -1666,6 +1663,7 @@ ${slotList || "(없음)"}
                 </div>
               )}
             </div>
+            )}
 
 
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
