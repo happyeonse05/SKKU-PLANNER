@@ -584,6 +584,13 @@ export default function TodayGapPlanner() {
   const [ttFound, setTtFound] = useState(null);   // OCR 결과 확인 목록
   const ttInputRef = useRef(null);
   const [openBook, setOpenBook] = useState(null);
+  const [shelfSearch, setShelfSearch] = useState("");
+  const [shelfFilter, setShelfFilter] = useState("all");
+  const [entrySearch, setEntrySearch] = useState("");
+  const [shelfSuggestHide, setShelfSuggestHide] = useState(() => {
+    try { return localStorage.getItem("teum-shelf-suggest-hide-v1") === "1"; } catch { return false; }
+  });
+  const [dragSplit, setDragSplit] = useState(null); // { taskId, fromIdx }
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfPages, setPdfPages] = useState(null);
   const [pdfFrom, setPdfFrom] = useState("1");
@@ -754,6 +761,34 @@ export default function TodayGapPlanner() {
       return { ...prev, splits: sp };
     });
   }
+  function reorderSplitSlots(taskId, fromIdx, toIdx) {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    updateData((prev) => {
+      const sp = prev.splits?.[taskId];
+      if (!sp?.slots) return prev;
+      if (toIdx >= sp.slots.length) return prev;
+      const slots = [...sp.slots];
+      const [item] = slots.splice(fromIdx, 1);
+      slots.splice(toIdx, 0, item);
+      return { ...prev, splits: { ...prev.splits, [taskId]: { ...sp, slots } } };
+    });
+  }
+  function moveSplitSlot(taskId, fromIdx, dir) {
+    reorderSplitSlots(taskId, fromIdx, fromIdx + dir);
+  }
+  function removeSplitSlot(taskId, idx) {
+    updateData((prev) => {
+      const sp = prev.splits?.[taskId];
+      if (!sp?.slots) return prev;
+      const slots = sp.slots.filter((_, i) => i !== idx);
+      if (!slots.length) {
+        const next = { ...(prev.splits || {}) };
+        delete next[taskId];
+        return { ...prev, splits: next };
+      }
+      return { ...prev, splits: { ...prev.splits, [taskId]: { ...sp, slots } } };
+    });
+  }
 
   function updateShelf(fn) {
     setShelf((prev) => {
@@ -763,7 +798,7 @@ export default function TodayGapPlanner() {
     });
   }
   function getBook(name) {
-    return shelf[name] || { entries: [], color: null };
+    return shelf[name] || { entries: [], color: null, tags: [] };
   }
   function addEntry(subject, patch) {
     updateShelf((prev) => {
@@ -1149,13 +1184,102 @@ ${sourceText}`;
       })
     : [];
   const todayGaps = data ? computeGapsForDay(data.classes, todayDayName(), today) : [];
-  const shelfBookNames = data ? [...new Set([...subjectsFromClasses(data.classes), ...Object.keys(shelf || {})])] : [];
-  function addCustomBook() {
-    const nm = window.prompt("추가할 책 이름 (과목이나 주제)", "");
+  const shelfBookNames = Object.keys(shelf || {});
+  function addCustomBook(presetName) {
+    const nm = typeof presetName === "string" && presetName
+      ? presetName
+      : window.prompt("추가할 책 이름 (과목·주제 자유롭게)", "");
     const v = (nm || "").trim();
     if (!v) return;
-    updateShelf((prev) => (prev[v] ? prev : { ...prev, [v]: { entries: [] } }));
+    if (shelf[v]) { alert("이미 같은 이름의 책이 있어요"); setOpenBook(v); return; }
+    const color = BOOK_COLORS[Object.keys(shelf || {}).length % BOOK_COLORS.length];
+    updateShelf((prev) => ({ ...prev, [v]: { entries: [], color, tags: [] } }));
+    setOpenBook(v);
   }
+  function renameBook(oldName) {
+    const nm = window.prompt("새 이름", oldName);
+    const v = (nm || "").trim();
+    if (!v || v === oldName) return;
+    if (shelf[v]) { alert("이미 같은 이름의 책이 있어요"); return; }
+    updateShelf((prev) => {
+      const next = { ...prev };
+      next[v] = { ...(next[oldName] || { entries: [] }) };
+      delete next[oldName];
+      return next;
+    });
+    setOpenBook(v);
+  }
+  function removeBook(name) {
+    if (!window.confirm(`"${name}" 책을 삭제할까요? 안의 기록·자료도 함께 지워져요.`)) return;
+    updateShelf((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+    setOpenBook(null);
+  }
+  function setBookColor(name, color) {
+    updateShelf((prev) => {
+      const book = prev[name] || { entries: [] };
+      return { ...prev, [name]: { ...book, color } };
+    });
+  }
+  function toggleBookTag(name, tag) {
+    updateShelf((prev) => {
+      const book = prev[name] || { entries: [], tags: [] };
+      const tags = book.tags || [];
+      const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
+      return { ...prev, [name]: { ...book, tags: next } };
+    });
+  }
+  function dismissShelfSuggest() {
+    setShelfSuggestHide(true);
+    try { localStorage.setItem("teum-shelf-suggest-hide-v1", "1"); } catch {}
+  }
+  const classSubjects = data ? subjectsFromClasses(data.classes) : [];
+  const suggestedBooks = classSubjects.filter((s) => !shelfBookNames.includes(s));
+  const reviewQueue = shelfBookNames.flatMap((name) => {
+    const book = getBook(name);
+    return (book.entries || [])
+      .filter((e) => e.understand === "review" || e.understand === "no")
+      .map((e) => ({ ...e, bookName: name }));
+  });
+  const starredExamEntries = shelfBookNames.flatMap((name) => {
+    const book = getBook(name);
+    return (book.entries || []).filter((e) => e.star).map((e) => ({ ...e, bookName: name }));
+  });
+  const examBoardTasks = (data?.tasks || [])
+    .filter((t) => t.due && !(data.completed || {})[t.id])
+    .map((t) => ({ ...t, d: daysUntil(t.due) }))
+    .filter((t) => t.d <= 14)
+    .sort((a, b) => a.d - b.d);
+  const weekReview = (() => {
+    const log = data?.completionLog || {};
+    let done = 0;
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      done += log[toKey(d)] || 0;
+    }
+    const postponedToday = Object.values(data?.postponed || {}).filter((v) => v === today).length;
+    const dueThisWeek = (data?.tasks || []).filter((t) => {
+      if (!t.due || (data.completed || {})[t.id]) return false;
+      const d = daysUntil(t.due);
+      return d >= 0 && d <= 7;
+    }).length;
+    return { done, reviewNeed: reviewQueue.length, postponedToday, dueThisWeek, starred: starredExamEntries.length };
+  })();
+  const filteredShelfNames = shelfBookNames.filter((name) => {
+    const q = shelfSearch.trim().toLowerCase();
+    const book = getBook(name);
+    if (shelfFilter === "review") {
+      const need = (book.entries || []).some((e) => e.understand === "review" || e.understand === "no");
+      if (!need) return false;
+    }
+    if (!q) return true;
+    if (name.toLowerCase().includes(q)) return true;
+    if ((book.tags || []).some((t) => t.toLowerCase().includes(q))) return true;
+    return (book.entries || []).some((e) => (e.memo || "").toLowerCase().includes(q));
+  });
   const nextClassInfo = data ? nextUpcomingClass(data.classes) : null;
   const nextClassPrep = nextClassInfo ? (data.prepByClass?.[nextClassInfo.classItem.name] || "") : "";
   const tomorrowDateObj = new Date();
@@ -1738,6 +1862,67 @@ ${slotList || "(없음)"}
             </div>
 
             <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+              <div className="text-xs font-semibold mb-2">주간 리뷰</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  ["완료", `${weekReview.done}개`],
+                  ["이번 주 마감", `${weekReview.dueThisWeek}개`],
+                  ["복습 필요", `${weekReview.reviewNeed}개`],
+                  ["시험 별표", `${weekReview.starred}개`],
+                ].map(([a,b]) => (
+                  <div key={a} className="rounded-xl px-2.5 py-2" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                    <div className="text-[10px]" style={{color:COLORS.muted}}>{a}</div>
+                    <div className="text-sm font-bold mt-0.5">{b}</div>
+                  </div>
+                ))}
+              </div>
+              {(weekReview.reviewNeed > 0 || weekReview.starred > 0) && (
+                <button onClick={() => { setActiveTab("shelf"); setOpenBook(null); setShelfFilter(weekReview.reviewNeed>0?"review":"all"); }}
+                  className="w-full mt-2 text-[11px] py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                  책장에서 복습·시험 범위 보기
+                </button>
+              )}
+            </div>
+
+            {(examBoardTasks.length > 0 || starredExamEntries.length > 0) && (
+              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold">시험·마감 보드</span>
+                  <span className="text-[10px]" style={{color:COLORS.muted}}>D-14 이내</span>
+                </div>
+                {examBoardTasks.slice(0, 6).map((t) => (
+                  <div key={t.id} className="flex items-center justify-between text-[11px] py-1.5" style={{borderBottom:`1px solid ${COLORS.ruleLine}`}}>
+                    <span className="truncate flex-1 pr-2">{t.name}</span>
+                    <span className="font-bold px-2 py-0.5 rounded-full" style={{background:ddayColor(t.d, COLORS), color: t.d<=2?"#fff":COLORS.ink, fontSize:10}}>{ddayLabel(t.d)}</span>
+                  </div>
+                ))}
+                {starredExamEntries.slice(0, 4).map((e) => (
+                  <button key={e.id} onClick={() => { setActiveTab("shelf"); setOpenBook(e.bookName); }}
+                    className="flex items-center justify-between w-full text-[11px] py-1.5 text-left" style={{borderBottom:`1px solid ${COLORS.ruleLine}`}}>
+                    <span className="truncate flex-1 pr-2">⭐ {e.bookName} · {e.date}</span>
+                    <span style={{color:COLORS.muted,fontSize:10}}>시험범위</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!shelfSuggestHide && suggestedBooks.length > 0 && (
+              <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold">책장에 과목 추가</span>
+                  <button onClick={dismissShelfSuggest} className="text-[10px]" style={{color:COLORS.muted}}>숨기기</button>
+                </div>
+                <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>시간표 과목을 자동으로 만들지 않아요. 원할 때만 추가하세요.</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedBooks.slice(0, 8).map((s) => (
+                    <button key={s} onClick={() => { addCustomBook(s); setActiveTab("shelf"); }} className="text-[11px] px-2.5 py-1 rounded-full"
+                      style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>+ {s}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold">오늘({todayName}) 공강 · 시간표 기준</span>
                 <button onClick={() => setShowTomorrow((v) => !v)} className="text-xs flex items-center gap-0.5" style={{ color: COLORS.muted }}>
@@ -2046,13 +2231,42 @@ ${slotList || "(없음)"}
                             공강에 나눈 계획 · {data.splits[t.id].slots.length}번
                             {data.splits[t.id].left >= 20 && <span style={{color:COLORS.strawberry}}> (남은 {data.splits[t.id].left}분은 자리 없음)</span>}
                           </div>
+                          <div className="text-[10px] mb-1.5" style={{color:COLORS.muted}}>길게 눌러 드래그하거나 ▲▼로 순서를 바꿔요</div>
                           {data.splits[t.id].slots.map((sl,i)=>(
-                            <div key={i} className="flex items-center gap-2 text-[11px] mb-0.5">
-                              <span style={{width:52,color:COLORS.muted}}>{sl.date.slice(5).replace('-','/')} {sl.day}</span>
+                            <div
+                              key={i}
+                              draggable
+                              onDragStart={(e) => {
+                                setDragSplit({ taskId: t.id, fromIdx: i });
+                                try { e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; } catch {}
+                              }}
+                              onDragOver={(e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch {} }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const from = dragSplit?.taskId === t.id ? dragSplit.fromIdx : i;
+                                if (dragSplit?.taskId === t.id) reorderSplitSlots(t.id, from, i);
+                                setDragSplit(null);
+                              }}
+                              onDragEnd={() => setDragSplit(null)}
+                              className="flex items-center gap-1.5 text-[11px] mb-1 rounded-lg px-1.5 py-1.5"
+                              style={{
+                                background: COLORS.card,
+                                border: `1px solid ${dragSplit?.taskId===t.id && dragSplit?.fromIdx===i ? COLORS.strawberry : COLORS.ruleLine}`,
+                                cursor: "grab",
+                                opacity: dragSplit?.taskId===t.id && dragSplit?.fromIdx===i ? 0.55 : 1,
+                                touchAction: "none",
+                              }}
+                            >
+                              <span style={{color:COLORS.muted,fontSize:12,lineHeight:1,userSelect:"none"}}>⋮⋮</span>
+                              <span style={{width:54,color:COLORS.muted,fontSize:10}}>{sl.date.slice(5).replace('-','/')} {sl.day}</span>
                               <span className="flex-1">{sl.start}~{sl.end}</span>
                               <span style={{color:COLORS.muted}}>{sl.min}분</span>
+                              <button type="button" onClick={()=>moveSplitSlot(t.id,i,-1)} className="p-0.5" style={{color:COLORS.muted}} title="위로"><ChevronUp size={12}/></button>
+                              <button type="button" onClick={()=>moveSplitSlot(t.id,i,1)} className="p-0.5" style={{color:COLORS.muted}} title="아래로"><ChevronDown size={12}/></button>
+                              <button type="button" onClick={()=>removeSplitSlot(t.id,i)} className="p-0.5" style={{color:COLORS.coral}} title="삭제"><X size={12}/></button>
                             </div>
                           ))}
+                          <button onClick={()=>applySplit(t)} className="text-[10px] mt-1 px-2 py-1 rounded-full" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>다시 배치하기</button>
                         </div>
                       )}
                     </>}
@@ -2387,6 +2601,17 @@ ${slotList || "(없음)"}
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="text-xs font-semibold flex items-center gap-1 mb-2"><ShieldCheck size={13}/> 내 데이터</div>
+                <div className="rounded-xl px-2.5 py-2 mb-2 text-[11px]" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span>클라우드 (시간표·할 일)</span>
+                    <span style={{color: saveWarning ? COLORS.coral : COLORS.mint, fontWeight:700}}>{saveWarning ? "저장 지연" : "동기화됨"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>이 기기 (책장 자료)</span>
+                    <span style={{color:COLORS.mint, fontWeight:700}}>로컬 {(() => { const u = shelfUsage(shelf); return `${u.files}파일 · ${u.mb.toFixed(1)}MB`; })()}</span>
+                  </div>
+                  <div className="text-[10px] mt-1.5" style={{color:COLORS.muted}}>오프라인에서도 책장·할 일 목록을 볼 수 있어요. 클라우드 항목은 온라인 때 동기화돼요.</div>
+                </div>
                 <div className="text-xs mb-2" style={{color:COLORS.muted}}>시간표·할 일·준비물 메모는 계정에 저장되고, 책장 PDF·녹음은 이 브라우저에 저장돼요.</div>
                 <div className="text-[10px] mb-3" style={{color:COLORS.muted}}>JSON 백업에는 책장 자료도 포함돼요. 자료가 많으면 파일이 커질 수 있어요.</div>
                 <div className="flex flex-wrap gap-2">
@@ -2396,6 +2621,7 @@ ${slotList || "(없음)"}
                   <button onClick={clearMyCloudData} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:'#B3261E'}}>내 플래너 데이터 삭제</button>
                 </div>
                 <div className="mt-3 pt-3" style={{borderTop:`1px dashed ${COLORS.ruleLine}`}}>
+                  <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>홈 화면 바로가기: 브라우저 메뉴에서 「홈 화면에 추가」하면 앱처럼 쓸 수 있어요. (PWA)</div>
                   <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>GitHub Pages에서 AI를 쓰려면 Vercel API 주소를 빌드 환경에 연결해야 해요.</div>
                   <button onClick={deleteAccount} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:'#B3261E'}}>회원탈퇴</button>
                 </div>
@@ -2533,10 +2759,10 @@ ${slotList || "(없음)"}
                   <div className="flex items-end justify-between mb-3">
                     <div>
                       <div className="text-base font-semibold">책장</div>
-                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>시간표 과목이 책으로 꽂혀요</div>
+                      <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>과목·주제를 직접 추가해서 모아요</div>
                     </div>
                     <div className="text-right">
-                      <button onClick={addCustomBook} className="text-[11px] px-2.5 py-1 rounded-full mb-1 mr-1"
+                      <button onClick={() => addCustomBook()} className="text-[11px] px-2.5 py-1 rounded-full mb-1 mr-1"
                         style={{background:COLORS.ink,color:"#fff"}}>+ 책 추가</button>
                       <button onClick={() => setScanOpen(true)} className="text-[11px] px-2.5 py-1 rounded-full mb-1"
                         style={{background:COLORS.mint,color:"#fff"}}>교재 스캔</button>
@@ -2546,32 +2772,76 @@ ${slotList || "(없음)"}
                     </div>
                   </div>
 
+                  {!shelfSuggestHide && suggestedBooks.length > 0 && (
+                    <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="text-xs font-semibold">시간표에서 추가할까요?</div>
+                        <button onClick={dismissShelfSuggest} className="text-[10px]" style={{color:COLORS.muted}}>더 이상 안 보기</button>
+                      </div>
+                      <div className="text-[10px] mb-2" style={{color:COLORS.muted}}>자동으로 만들지 않아요. 원하는 과목만 골라 넣으세요.</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {suggestedBooks.map((s) => (
+                          <button key={s} onClick={() => addCustomBook(s)} className="text-[11px] px-2.5 py-1 rounded-full"
+                            style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>+ {s}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {shelfBookNames.length === 0 ? (
                     <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <BookOpen size={28} style={{margin:"0 auto 8px",color:COLORS.muted}}/>
                       <div className="text-sm font-semibold mb-1">아직 책이 없어요</div>
-                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣으면 과목마다 책이 생기고,<br/>원하는 책을 직접 추가할 수도 있어요</div>
+                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>원하는 과목·주제 이름으로 책을 직접 추가해요<br/>시간표와는 따로 관리돼요</div>
                       <div className="flex gap-1.5 justify-center">
-                        <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록</button>
-                        <button onClick={addCustomBook} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}>+ 책 추가</button>
+                        <button onClick={() => addCustomBook()} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}>+ 책 추가</button>
                       </div>
                     </div>
                   ) : (
                     <>
+                    <div className="flex gap-1.5 mb-2">
+                      <input value={shelfSearch} onChange={(e)=>setShelfSearch(e.target.value)} placeholder="책·태그·메모 검색"
+                        className="flex-1 text-xs rounded-full px-3 py-1.5" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.ink}}/>
+                      <button onClick={()=>setShelfFilter(shelfFilter==="review"?"all":"review")} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap"
+                        style={{background:shelfFilter==="review"?COLORS.strawberry:COLORS.paper,color:shelfFilter==="review"?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>
+                        복습 {reviewQueue.length}
+                      </button>
+                    </div>
+                    {shelfFilter === "review" && reviewQueue.length > 0 && (
+                      <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
+                        <div className="text-xs font-semibold mb-2">복습 큐 · {reviewQueue.length}개</div>
+                        <div className="flex flex-col gap-1.5">
+                          {reviewQueue.slice(0, 12).map((e) => (
+                            <button key={e.id} onClick={() => { setOpenBook(e.bookName); setEntrySearch(""); }}
+                              className="text-left text-[11px] px-2.5 py-2 rounded-xl"
+                              style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                              <span className="font-semibold">{e.bookName}</span>
+                              <span style={{color:COLORS.muted}}> · {e.date}</span>
+                              <div className="truncate mt-0.5" style={{color:COLORS.muted}}>{(e.memo||"").slice(0,60) || "메모 없음"}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="text-[10px] mb-2 rounded-xl px-2.5 py-2" style={{background:COLORS.paper,color:COLORS.muted,border:`1px dashed ${COLORS.ruleLine}`}}>📖 책을 열면 녹음(자동 대본) · 자료 · AI 요약 · 교수님 출제 분석을 쓸 수 있어요</div>
                     <div className="grid grid-cols-3 gap-3">
-                      {shelfBookNames.map((name, i) => {
+                      {filteredShelfNames.map((name, i) => {
                         const book = getBook(name);
                         const cnt = (book.entries || []).length;
                         const need = (book.entries || []).filter((e) => e.understand === "review" || e.understand === "no").length;
-                        const col = BOOK_COLORS[i % BOOK_COLORS.length];
+                        const col = book.color || BOOK_COLORS[i % BOOK_COLORS.length];
                         return (
-                          <button key={name} onClick={() => setOpenBook(name)}
+                          <button key={name} onClick={() => { setOpenBook(name); setEntrySearch(""); }}
                             className="relative rounded-lg text-left p-2.5"
                             style={{aspectRatio:"3/4",background:col,boxShadow:"0 4px 10px rgba(119,84,80,.18)",overflow:"hidden"}}>
                             <div style={{position:"absolute",left:0,top:0,bottom:0,width:9,background:"rgba(0,0,0,.14)"}}/>
                             <div className="flex flex-col h-full justify-between" style={{paddingLeft:8}}>
-                              <div className="text-[11px] font-bold leading-tight" style={{color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.18)"}}>{name}</div>
+                              <div>
+                                <div className="text-[11px] font-bold leading-tight" style={{color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.18)"}}>{name}</div>
+                                {(book.tags||[]).length > 0 && (
+                                  <div className="text-[8px] mt-1" style={{color:"rgba(255,255,255,.85)"}}>{(book.tags||[]).slice(0,2).join(" · ")}</div>
+                                )}
+                              </div>
                               <div>
                                 <div className="text-[9px]" style={{color:"rgba(255,255,255,.9)"}}>{cnt}회차</div>
                                 {need > 0 && <div className="text-[9px] font-bold" style={{color:"#fff"}}>복습 {need}</div>}
@@ -2581,6 +2851,9 @@ ${slotList || "(없음)"}
                         );
                       })}
                     </div>
+                    {filteredShelfNames.length === 0 && (
+                      <div className="text-xs text-center py-6" style={{color:COLORS.muted}}>검색 결과가 없어요</div>
+                    )}
                     </>
                   )}
                 </>
@@ -2597,10 +2870,34 @@ ${slotList || "(없음)"}
                         <div className="text-base font-semibold">{openBook}</div>
                         <div className="text-xs" style={{color:COLORS.muted}}>{entries.length}회차 기록</div>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <button onClick={() => renameBook(openBook)} className="p-1.5 rounded-full" style={{background:COLORS.paper}} title="이름 바꾸기"><Pencil size={13}/></button>
+                        <button onClick={() => removeBook(openBook)} className="p-1.5 rounded-full" style={{background:COLORS.paper}} title="책 삭제"><Trash2 size={13} style={{color:COLORS.muted}}/></button>
                         <button onClick={() => analyzeProfessorStyle(openBook)} disabled={analysisLoading} className="text-[10px] px-2.5 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff",opacity:analysisLoading?.6:1}}>{analysisLoading ? "분석 중…" : "교수님 분석"}</button>
                         <button onClick={() => addEntry(openBook, {})} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}><Plus size={12} style={{display:"inline"}}/> 오늘 수업</button>
                       </div>
+                    </div>
+
+                    <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
+                      <div className="text-[10px] font-semibold mb-1.5" style={{color:COLORS.muted}}>표지 색</div>
+                      <div className="flex gap-1.5 mb-2 flex-wrap">
+                        {BOOK_COLORS.map((c) => (
+                          <button key={c} onClick={() => setBookColor(openBook, c)}
+                            className="w-6 h-6 rounded-full" style={{background:c,border: (book.color||"")===c ? `2px solid ${COLORS.ink}` : "2px solid transparent"}} />
+                        ))}
+                      </div>
+                      <div className="text-[10px] font-semibold mb-1.5" style={{color:COLORS.muted}}>태그</div>
+                      <div className="flex gap-1 flex-wrap mb-2">
+                        {["전공","교양","시험","과제","복습","기타"].map((tag) => {
+                          const on = (book.tags || []).includes(tag);
+                          return (
+                            <button key={tag} onClick={() => toggleBookTag(openBook, tag)} className="text-[10px] px-2 py-0.5 rounded-full"
+                              style={{background:on?COLORS.ink:COLORS.paper,color:on?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{tag}</button>
+                          );
+                        })}
+                      </div>
+                      <input value={entrySearch} onChange={(e)=>setEntrySearch(e.target.value)} placeholder="이 책 안에서 메모 검색"
+                        className="w-full text-xs rounded-full px-3 py-1.5" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,color:COLORS.ink}}/>
                     </div>
 
                     <div className="rounded-2xl p-3 mb-3" style={{background:COLORS.card,border:`1px dashed ${COLORS.ruleLine}`}}>
@@ -2651,7 +2948,10 @@ ${slotList || "(없음)"}
                     )}
 
                     <div className="flex flex-col gap-3">
-                      {entries.map((en) => {
+                      {(entrySearch.trim()
+                        ? entries.filter((en) => (en.memo||"").toLowerCase().includes(entrySearch.trim().toLowerCase()) || (en.date||"").includes(entrySearch.trim()))
+                        : entries
+                      ).map((en) => {
                         const isRec = recording && recording.entryId === en.id;
                         return (
                           <div key={en.id} className="rounded-2xl p-3" style={{background:COLORS.card,border:`1px solid ${COLORS.ruleLine}`}}>
