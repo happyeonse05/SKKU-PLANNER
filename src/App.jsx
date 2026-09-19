@@ -1046,7 +1046,19 @@ ${sourceText}`;
     const snapshot = supabasePayload(next);
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
-      .then(() => upsertUserRow(auth.accessToken, auth.userId, snapshot))
+      .then(async () => {
+        try {
+          await upsertUserRow(auth.accessToken, auth.userId, snapshot);
+        } catch (e) {
+          // 토큰이 만료돼 저장에 실패하면 세션을 갱신하고 한 번 더 저장합니다.
+          let stored = null;
+          try { stored = localStorage.getItem(SB_REFRESH_KEY); } catch (e2) {}
+          const refreshed = await supabaseRefresh(stored || auth.refreshToken);
+          try { localStorage.setItem(SB_REFRESH_KEY, refreshed.refresh_token); } catch (e2) {}
+          setAuth((prev) => (prev ? { ...prev, accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token } : prev));
+          await upsertUserRow(refreshed.access_token, auth.userId, snapshot);
+        }
+      })
       .then(() => setSaveWarning(false))
       .catch(() => setSaveWarning(true));
     return saveQueueRef.current;
