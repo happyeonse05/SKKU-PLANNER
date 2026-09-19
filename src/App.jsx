@@ -1659,7 +1659,7 @@ ${slotList || "(없음)"}
                 <button onClick={() => setCelebrateMilestone(null)} style={{ color: "#fff" }}><X size={16} /></button>
               </div>
             )}
-            <div className="flex items-center justify-between mt-2 mb-3" style={{background:"rgba(255,249,245,.82)", marginLeft:-4, marginRight:-4, padding:"10px 10px 8px", borderRadius:18, border:`1px dashed ${COLORS.ruleLine}`}}>
+            <div className="flex items-center justify-between mt-2 mb-3" style={{background: darkMode ? "rgba(255,255,255,.05)" : "rgba(255,249,245,.82)", marginLeft:-4, marginRight:-4, padding:"10px 10px 8px", borderRadius:18, border:`1px dashed ${COLORS.ruleLine}`}}>
               <div>
                 <div className="flex items-center gap-2"><div style={{ fontSize:20,fontWeight:800,letterSpacing:"-0.02em" }}>담다</div></div>
                 <div className="text-xs" style={{ color: COLORS.muted }}>
@@ -1768,7 +1768,7 @@ ${slotList || "(없음)"}
               )}
             </div>
 
-            <div style={{ background: "linear-gradient(135deg, #FFF8F8, #FFFDF8)", border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
+            <div style={{ background: darkMode ? COLORS.card : "linear-gradient(135deg, #FFF8F8, #FFFDF8)", border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div><div className="text-xs font-semibold flex items-center gap-1"><Zap size={13}/> 틈 자동 매칭</div><div className="text-xs mt-0.5" style={{color:COLORS.muted}}>남는 시간 길이 + 마감 + 지금 에너지에 맞춰 바로 할 일을 골라요.</div></div>
               </div>
@@ -2754,7 +2754,7 @@ ${slotList || "(없음)"}
             </div>
           )}
 
-          <div style={{ borderTop: `1px solid ${COLORS.ruleLine}`, background: "rgba(255,253,252,.94)", boxShadow: "0 -8px 24px rgba(119,84,80,.05)" }} className="flex items-center justify-around py-3">
+          <div style={{ borderTop: `1px solid ${COLORS.ruleLine}`, background: darkMode ? "rgba(27,30,37,.94)" : "rgba(255,253,252,.94)", boxShadow: "0 -8px 24px rgba(119,84,80,.05)" }} className="flex items-center justify-around py-3">
             <button onClick={() => setActiveTab("home")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "home" ? COLORS.ink : COLORS.muted, opacity: activeTab === "home" ? 1 : 0.5 }}><Home size={18}/><span style={{fontSize:10}}>홈</span></button>
             <button onClick={() => setActiveTab("tasks")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "tasks" ? COLORS.ink : COLORS.muted, opacity: activeTab === "tasks" ? 1 : 0.5 }}><ListTodo size={18}/><span style={{fontSize:10}}>할 일</span></button>
             <button onClick={() => setActiveTab("calendar")} className="flex flex-col items-center gap-0.5" style={{ color: activeTab === "calendar" ? COLORS.ink : COLORS.muted, opacity: activeTab === "calendar" ? 1 : 0.5 }}><CalendarDays size={18}/><span style={{fontSize:10}}>시간표</span></button>
