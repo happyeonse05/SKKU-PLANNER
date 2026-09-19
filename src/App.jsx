@@ -526,6 +526,7 @@ export default function TodayGapPlanner() {
   const [meals, setMeals] = useState(null);
   const [jobs, setJobs] = useState(null);
   const [jobsErr, setJobsErr] = useState(false);
+  const [jobsSort, setJobsSort] = useState("마감순");
   const [jobsHide, setJobsHide] = useState(() => {
     try { return JSON.parse(localStorage.getItem(JOBS_HIDE_KEY) || "[]"); } catch (e) { return []; }
   });
@@ -2333,7 +2334,13 @@ ${slotList || "(없음)"}
               <div className="flex items-end justify-between mb-3">
                 <div>
                   <div className="text-base font-semibold">마감함</div>
-                  <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>성대 채용·모집 공지를 마감순으로</div>
+                  <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>성대 채용·모집 공지 모아보기</div>
+                  <div className="flex gap-1.5 mt-2">
+                    {["마감순","등록순"].map((s)=>(
+                      <button key={s} onClick={()=>setJobsSort(s)} className="text-[11px] px-3 py-1 rounded-full"
+                        style={{background:jobsSort===s?COLORS.ink:COLORS.paper,color:jobsSort===s?"#fff":COLORS.muted,border:`1px solid ${COLORS.ruleLine}`}}>{s}</button>
+                    ))}
+                  </div>
                 </div>
                 {jobs?.updated && <div className="text-[10px]" style={{color:COLORS.muted}}>{jobs.updated.slice(5,10)} 기준</div>}
               </div>
@@ -2407,6 +2414,11 @@ ${slotList || "(없음)"}
                 };
 
                 if (!list.length) return <div className="text-xs text-center py-8" style={{color:COLORS.muted}}>지금은 볼 공지가 없어요</div>;
+
+                if (jobsSort === "등록순") {
+                  const byPosted = [...list].sort((a, b) => (b.posted || "").localeCompare(a.posted || ""));
+                  return <>{byPosted.map((j) => <Card key={j.id} j={j}/>)}</>;
+                }
 
                 return (
                   <>
