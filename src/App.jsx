@@ -1100,6 +1100,13 @@ ${sourceText}`;
       })
     : [];
   const todayGaps = data ? computeGapsForDay(data.classes, todayDayName(), today) : [];
+  const shelfBookNames = data ? [...new Set([...subjectsFromClasses(data.classes), ...Object.keys(shelf || {})])] : [];
+  function addCustomBook() {
+    const nm = window.prompt("추가할 책 이름 (과목이나 주제)", "");
+    const v = (nm || "").trim();
+    if (!v) return;
+    updateShelf((prev) => (prev[v] ? prev : { ...prev, [v]: { entries: [] } }));
+  }
   const nextClassInfo = data ? nextUpcomingClass(data.classes) : null;
   const nextClassPrep = nextClassInfo ? (data.prepByClass?.[nextClassInfo.classItem.name] || "") : "";
   const tomorrowDateObj = new Date();
@@ -2462,6 +2469,8 @@ ${slotList || "(없음)"}
                       <div className="text-xs mt-0.5" style={{color:COLORS.muted}}>시간표 과목이 책으로 꽂혀요</div>
                     </div>
                     <div className="text-right">
+                      <button onClick={addCustomBook} className="text-[11px] px-2.5 py-1 rounded-full mb-1 mr-1"
+                        style={{background:COLORS.ink,color:"#fff"}}>+ 책 추가</button>
                       <button onClick={() => setScanOpen(true)} className="text-[11px] px-2.5 py-1 rounded-full mb-1"
                         style={{background:COLORS.mint,color:"#fff"}}>교재 스캔</button>
                       <div className="text-[10px]" style={{color:COLORS.muted}}>
@@ -2470,18 +2479,21 @@ ${slotList || "(없음)"}
                     </div>
                   </div>
 
-                  {subjectsFromClasses(data.classes).length === 0 ? (
+                  {shelfBookNames.length === 0 ? (
                     <div className="rounded-2xl p-6 text-center" style={{background:COLORS.paper,border:`1px dashed ${COLORS.ruleLine}`}}>
                       <BookOpen size={28} style={{margin:"0 auto 8px",color:COLORS.muted}}/>
                       <div className="text-sm font-semibold mb-1">아직 책이 없어요</div>
-                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣으면 과목마다 책이 한 권씩 생겨요</div>
-                      <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록하러 가기</button>
+                      <div className="text-xs mb-3" style={{color:COLORS.muted}}>시간표에 수업을 넣으면 과목마다 책이 생기고,<br/>원하는 책을 직접 추가할 수도 있어요</div>
+                      <div className="flex gap-1.5 justify-center">
+                        <button onClick={() => setActiveTab("calendar")} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.ink,color:"#fff"}}>시간표 등록</button>
+                        <button onClick={addCustomBook} className="text-xs px-3 py-1.5 rounded-full" style={{background:COLORS.strawberry,color:"#fff"}}>+ 책 추가</button>
+                      </div>
                     </div>
                   ) : (
                     <>
                     <div className="text-[10px] mb-2 rounded-xl px-2.5 py-2" style={{background:COLORS.paper,color:COLORS.muted,border:`1px dashed ${COLORS.ruleLine}`}}>📖 책을 열면 녹음(자동 대본) · 자료 · AI 요약 · 교수님 출제 분석을 쓸 수 있어요</div>
                     <div className="grid grid-cols-3 gap-3">
-                      {subjectsFromClasses(data.classes).map((name, i) => {
+                      {shelfBookNames.map((name, i) => {
                         const book = getBook(name);
                         const cnt = (book.entries || []).length;
                         const need = (book.entries || []).filter((e) => e.understand === "review" || e.understand === "no").length;
