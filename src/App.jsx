@@ -1565,7 +1565,7 @@ ${slotList || "(없음)"}
               return (
                 <>
                   <div className="flex gap-2 mb-3">
-                    <div className="flex-1 rounded-2xl p-3" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`}}>
+                    <div className="flex-1 rounded-2xl p-3" style={{background:COLORS.paper,border:`1px solid ${COLORS.ruleLine}`,minWidth:0}}>
                       <div className="text-[10px] mb-1" style={{color:COLORS.muted}}>{mealDayLabel(md)}</div>
                       {m ? (
                         <div className="text-[11px] leading-snug">
@@ -1578,7 +1578,7 @@ ${slotList || "(없음)"}
                       )}
                     </div>
                     <button onClick={() => setActiveTab("jobs")} className="flex-1 rounded-2xl p-3 text-left"
-                      style={{background:soon.length?COLORS.strawberry:COLORS.paper,color:soon.length?"#fff":COLORS.ink,border:`1px solid ${COLORS.ruleLine}`}}>
+                      style={{background:soon.length?COLORS.strawberry:COLORS.paper,color:soon.length?"#fff":COLORS.ink,border:`1px solid ${COLORS.ruleLine}`,minWidth:0,overflow:"hidden"}}>
                       <div className="text-[10px] mb-1" style={{opacity:.8}}>마감함</div>
                       {soon.length ? (
                         <>
