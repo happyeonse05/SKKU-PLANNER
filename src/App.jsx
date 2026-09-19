@@ -2679,7 +2679,7 @@ ${slotList || "(없음)"}
           {activeTab === "diary" && (
             <div style={{ height: "calc(100vh - 62px)", background: COLORS.paper, position: "relative" }}>
               <iframe
-                {...(typeof window !== "undefined" && window.__DIARY_HTML__ ? { srcDoc: window.__DIARY_HTML__ } : { src: DIARY_SRC })}
+                {...(typeof window !== "undefined" && window.__DIARY_HTML__ ? { srcDoc: window.__DIARY_HTML__ } : { src: DIARY_SRC + "#damda=" + encodeURIComponent(auth?.userId || "") })}
                 title="일기"
                 style={{ width: "100%", height: "100%", border: 0, display: "block" }}
                 allow="clipboard-write"
