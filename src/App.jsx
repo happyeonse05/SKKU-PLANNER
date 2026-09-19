@@ -99,6 +99,34 @@ const SUPABASE_URL = "https://vmwypncwbxgcyyvtprag.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Lv_yeQVMU-XuEW5Fu7_2IQ_EzJZ3Z2T";
 const SB_REFRESH_KEY = "sb-refresh-token-v1";
 const DARK_MODE_KEY = "dark-mode-v1";
+const THEME_KEY = "damda-theme-v1";
+const NAVY_COLORS = {
+  page: "#EAEEF5",
+  paper: "#F5F8FC",
+  card: "#FDFEFF",
+  ruleLine: "#D6DEEA",
+  ink: "#2E3D57",
+  muted: "#7E8CA6",
+  yellow: "#E8C989",
+  coral: "#8FA3C8",
+  mint: "#8FB0A6",
+  strawberry: "#41598A",
+  leaf: "#6E8FA0",
+};
+const GRAY_COLORS = {
+  page: "#F1F1F2",
+  paper: "#F9F9FA",
+  card: "#FFFFFF",
+  ruleLine: "#E3E3E6",
+  ink: "#3C3C3F",
+  muted: "#8E8E93",
+  yellow: "#C9C2AE",
+  coral: "#B4A6A8",
+  mint: "#A6B3AA",
+  strawberry: "#6E6E74",
+  leaf: "#8E9A8F",
+};
+const LIGHT_THEMES = { "핑크": LIGHT_COLORS, "남색": NAVY_COLORS, "회색": GRAY_COLORS };
 const NOTIF_DATE_KEY = "last-notif-date-v1";
 const MILESTONES = [7, 30, 100, 365];
 const LOCAL_EXTRAS_PREFIX = "today-gap-extras-v1:";
@@ -499,7 +527,14 @@ export default function TodayGapPlanner() {
   });
   const [celebrateMilestone, setCelebrateMilestone] = useState(null);
 
-  const COLORS = darkMode ? DARK_COLORS : LIGHT_COLORS;
+  const [themeName, setThemeName] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) || "핑크"; } catch (e) { return "핑크"; }
+  });
+  function pickTheme(name) {
+    setThemeName(name);
+    try { localStorage.setItem(THEME_KEY, name); } catch (e) {}
+  }
+  const COLORS = darkMode ? DARK_COLORS : (LIGHT_THEMES[themeName] || LIGHT_COLORS);
   const RANK_COLORS = [COLORS.yellow, COLORS.coral, COLORS.mint];
   const TYPE_COLOR = { 수업: COLORS.mint, 알바: COLORS.coral, 동아리: COLORS.yellow, 기타: COLORS.muted };
 
@@ -2322,6 +2357,15 @@ ${slotList || "(없음)"}
 
               <div style={{ background: COLORS.card, border: `1px solid ${COLORS.ruleLine}` }} className="pretty-card rounded-2xl p-3.5 mb-3">
                 <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm">테마 색</span>
+                  <div className="flex gap-1">
+                    {Object.keys(LIGHT_THEMES).map((nm) => (
+                      <button key={nm} onClick={() => pickTheme(nm)} className="px-2.5 py-1 rounded-full text-xs"
+                        style={{ background: themeName === nm && !darkMode ? COLORS.ink : COLORS.paper, color: themeName === nm && !darkMode ? "#fff" : COLORS.muted, border: `1px solid ${COLORS.ruleLine}` }}>{nm}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2">
                   <span className="text-sm">다크모드</span>
                   <button onClick={toggleDarkMode} className="px-3 py-1 rounded-full text-xs font-medium" style={{ background: darkMode ? COLORS.ink : COLORS.paper, color: darkMode ? "#fff" : COLORS.muted, border: `1px solid ${COLORS.ruleLine}` }}>
                     {darkMode ? "켜짐" : "꺼짐"}
